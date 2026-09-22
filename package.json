@@ -1,0 +1,61 @@
+{
+  "name": "sticky-notes",
+  "version": "1.0.0",
+  "description": "Markdown sticky notes for Windows that stay above every other window.",
+  "author": "Jonathan Cummins",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/jcconsult/sticky-notes.git"
+  },
+  "main": "src/main/main.js",
+  "private": true,
+  "scripts": {
+    "start": "electron .",
+    "check": "node tools/check.js",
+    "vendor": "node tools/vendor.js",
+    "icon": "node tools/make-icon.js",
+    "postinstall": "node tools/vendor.js",
+    "prepack:dir": "node tools/vendor.js && node tools/make-icon.js",
+    "pack:dir": "electron-builder --win --dir",
+    "predist": "node tools/vendor.js && node tools/make-icon.js",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^26.15.3",
+    "markdown-it": "^14.1.0"
+  },
+  "build": {
+    "appId": "dev.stickynotes.app",
+    "productName": "Sticky Notes",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Sticky Notes",
+      "artifactName": "${productName} Setup ${version}.${ext}"
+    }
+  }
+}

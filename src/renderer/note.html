@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: https:; base-uri 'none'; form-action 'none';" />
+  <title>Note</title>
+  <link rel="stylesheet" href="note.css" />
+</head>
+<body>
+  <header id="bar" class="bar">
+    <div class="grip"></div>
+    <div class="actions">
+      <button id="btn-new" class="btn" title="New note (Ctrl+N)" aria-label="New note">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>
+      </button>
+      <button id="btn-color" class="btn" title="Note colour" aria-label="Note colour" aria-expanded="false">
+        <span class="swatch" id="swatch"></span>
+      </button>
+      <button id="btn-pin" class="btn" title="Keep on top" aria-label="Keep on top" aria-pressed="true">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2h4l-.6 3.4 2.1 2.1H4.5l2.1-2.1L6 2Z"/><path d="M8 7.5V14"/></svg>
+      </button>
+      <button id="btn-mode" class="btn" title="Edit source (Ctrl+E)" aria-label="Edit source">
+        <svg class="i-edit" viewBox="0 0 16 16" aria-hidden="true"><path d="M11.1 2.9 13 4.8 5.8 12H4v-1.8l7.1-7.3Z"/></svg>
+        <svg class="i-view" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.6 8S4 3.9 8 3.9 14.4 8 14.4 8 12 12.1 8 12.1 1.6 8 1.6 8Z"/><circle cx="8" cy="8" r="1.9"/></svg>
+      </button>
+      <button id="btn-close" class="btn btn-close" title="Close note (stays in the tray)" aria-label="Close note">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.6 4.6l6.8 6.8M11.4 4.6l-6.8 6.8"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="palette" class="palette" hidden></div>
+
+  <main class="body">
+    <article id="preview" class="preview markdown" tabindex="0"></article>
+    <textarea id="source" class="source" spellcheck="false" hidden
+              placeholder="Write or paste Markdown…"></textarea>
+  </main>
+
+  <script src="../vendor/markdown-it.min.js"></script>
+  <script src="markdown.js"></script>
+  <script src="note.js"></script>
+</body>
+</html>

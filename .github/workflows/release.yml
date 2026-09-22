@@ -1,0 +1,48 @@
+name: Release
+
+# Tagging is the release trigger. Everything else is automatic:
+#
+#   npm version patch   # bumps package.json, commits, creates the vX.Y.Z tag
+#   git push --follow-tags
+#
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: Build installer and publish
+    runs-on: windows-latest
+
+    permissions:
+      contents: write # required to create the release
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Parse every source file
+        run: npm run check
+
+      - name: Build the installer
+        run: npm run dist
+
+      # gh is preinstalled on GitHub runners, so this needs no third-party
+      # action and no secret beyond the automatic token.
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            dist/*.exe \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes

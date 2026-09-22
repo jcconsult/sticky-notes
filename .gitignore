@@ -1,0 +1,6 @@
+node_modules/
+dist/
+
+# Generated at install/build time by tools/vendor.js and tools/make-icon.js
+src/vendor/
+build/icon.ico

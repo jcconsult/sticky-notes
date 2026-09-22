@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none';" />
+  <title>Sticky Notes</title>
+  <link rel="stylesheet" href="library.css" />
+</head>
+<body>
+  <header class="bar">
+    <div class="grip"><span class="title" id="title">Sticky Notes</span></div>
+    <div class="actions">
+      <button id="btn-settings" class="btn" title="Settings" aria-label="Settings" aria-pressed="false">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.1"/><path d="M8 1.6v1.7M8 12.7v1.7M14.4 8h-1.7M3.3 8H1.6M12.5 3.5l-1.2 1.2M4.7 11.3l-1.2 1.2M12.5 12.5l-1.2-1.2M4.7 4.7 3.5 3.5"/></svg>
+      </button>
+      <button id="btn-min" class="btn" title="Minimise" aria-label="Minimise">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 8h8"/></svg>
+      </button>
+      <button id="btn-close" class="btn btn-close" title="Close" aria-label="Close">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.6 4.6l6.8 6.8M11.4 4.6l-6.8 6.8"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <ul id="list" class="list"></ul>
+  <p id="empty" class="empty" hidden>No notes yet.</p>
+
+  <section id="settings" class="settings" hidden>
+    <div class="setting">
+      <div class="setting-head">
+        <label for="opacity">Note transparency</label>
+        <output id="opacity-value" for="opacity">0%</output>
+      </div>
+      <input type="range" id="opacity" min="0" max="60" step="5" value="0" />
+      <p class="hint">Applies to every note. Higher values let the desktop show through.</p>
+    </div>
+
+    <div class="setting">
+      <div class="setting-head">
+        <label for="default-color">Default note colour</label>
+      </div>
+      <div class="swatches" id="default-color" role="radiogroup" aria-label="Default note colour"></div>
+    </div>
+
+    <div class="setting switch">
+      <label for="new-pinned">New notes stay on top</label>
+      <input type="checkbox" id="new-pinned" />
+    </div>
+
+    <div class="setting switch">
+      <label for="autostart">Start with Windows</label>
+      <input type="checkbox" id="autostart" />
+    </div>
+  </section>
+
+  <footer class="foot">
+    <button id="btn-new" class="new">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>
+      New note
+    </button>
+    <span id="count" class="count"></span>
+  </footer>
+
+  <script src="library.js"></script>
+</body>
+</html>

@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Check and package
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Parse every source file
+        run: npm run check
+
+      # Packages the app without building an installer. Catches broken
+      # electron-builder config and missing files long before a release tag.
+      - name: Package (smoke test)
+        run: npm run pack:dir
+
+      - name: Confirm the executable exists
+        shell: bash
+        run: test -f "dist/win-unpacked/Sticky Notes.exe"
