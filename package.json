@@ -17,9 +17,9 @@
     "icon": "node tools/make-icon.js",
     "postinstall": "node tools/vendor.js",
     "prepack:dir": "node tools/vendor.js && node tools/make-icon.js",
-    "pack:dir": "electron-builder --win --dir",
+    "pack:dir": "electron-builder --win --dir --publish never",
     "predist": "node tools/vendor.js && node tools/make-icon.js",
-    "dist": "electron-builder --win"
+    "dist": "electron-builder --win --publish never"
   },
   "devDependencies": {
     "electron": "^33.2.0",
