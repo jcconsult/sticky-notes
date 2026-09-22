@@ -43,7 +43,7 @@ No account, no sync, no subscription. Your notes are one JSON file on your disk.
 
 ## Install
 
-Download the latest `Sticky Notes Setup x.y.z.exe` from the
+Download the installer `.exe` from the
 [releases page](https://github.com/jcconsult/sticky-notes/releases/latest) and
 run it.
 

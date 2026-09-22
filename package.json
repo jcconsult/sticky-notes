@@ -55,7 +55,7 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Sticky Notes",
-      "artifactName": "${productName} Setup ${version}.${ext}"
+      "artifactName": "Sticky-Notes-Setup-${version}.${ext}"
     }
   }
 }
