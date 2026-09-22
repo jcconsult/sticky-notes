@@ -29,6 +29,10 @@ jobs:
       - name: Install
         run: npm ci
 
+      - name: Confirm the Markdown parser was vendored
+        shell: bash
+        run: test -f src/vendor/markdown-it.min.js
+
       - name: Parse every source file
         run: npm run check
 
