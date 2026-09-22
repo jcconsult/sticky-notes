@@ -99,12 +99,129 @@
   const toPercent = (value) => Math.round((1 - value) * 100);
   const fromPercent = (percent) => 1 - percent / 100;
 
+  // ------------------------------------------------------ shortcut capture
+
+  const DEFAULT_PEEK = 'Control+Alt+H';
+  const peek = {
+    row: null, keys: null, set: null, reset: null, hint: null, listening: false,
+  };
+
+  // Electron accelerators use 'Control+Alt+H'; people read 'Ctrl + Alt + H'.
+  function prettyAccelerator(accelerator) {
+    if (!accelerator) return 'None';
+    return accelerator
+      .replace(/CommandOrControl|Control/g, 'Ctrl')
+      .replace(/Super|Meta/g, 'Win')
+      .split('+')
+      .join(' + ');
+  }
+
+  // Only letters, digits and function keys — enough to express any sane
+  // chord, and it keeps us clear of keys whose Electron names differ by layout.
+  function keyName(event) {
+    const { code } = event;
+    if (/^Key[A-Z]$/.test(code)) return code.slice(3);
+    if (/^Digit[0-9]$/.test(code)) return code.slice(5);
+    if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+    return null;
+  }
+
+  function acceleratorFrom(event) {
+    const key = keyName(event);
+    if (!key) return null;
+    const parts = [];
+    if (event.ctrlKey) parts.push('Control');
+    if (event.altKey) parts.push('Alt');
+    if (event.shiftKey) parts.push('Shift');
+    if (event.metaKey) parts.push('Super');
+    // A bare letter would swallow that key for every app on the machine.
+    if (!parts.length) return null;
+    parts.push(key);
+    return parts.join('+');
+  }
+
+  function stopListening() {
+    peek.listening = false;
+    peek.row.classList.remove('listening');
+    peek.set.textContent = 'Change';
+  }
+
+  function onCapture(event) {
+    if (!peek.listening) return;
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (event.key === 'Escape') {
+      stopListening();
+      window.library.getSettings().then(fillSettings);
+      return;
+    }
+    if (['Control', 'Alt', 'Shift', 'Meta'].includes(event.key)) {
+      peek.keys.textContent = prettyAccelerator(
+        [
+          event.ctrlKey && 'Control', event.altKey && 'Alt',
+          event.shiftKey && 'Shift', event.metaKey && 'Super',
+        ].filter(Boolean).join('+'),
+      ) || '…';
+      return;
+    }
+
+    const accelerator = acceleratorFrom(event);
+    if (!accelerator) {
+      peek.hint.textContent = 'Use at least one modifier plus a letter, number or F-key.';
+      return;
+    }
+
+    stopListening();
+    window.library.setSettings({ peekShortcut: accelerator }).then(fillSettings);
+  }
+
+  function setupPeek() {
+    peek.row = document.querySelector('.shortcut');
+    peek.keys = document.getElementById('peek-keys');
+    peek.set = document.getElementById('peek-set');
+    peek.reset = document.getElementById('peek-reset');
+    peek.hint = document.getElementById('peek-hint');
+
+    peek.set.addEventListener('click', () => {
+      if (peek.listening) {
+        stopListening();
+        window.library.getSettings().then(fillSettings);
+        return;
+      }
+      peek.listening = true;
+      peek.row.classList.add('listening');
+      peek.row.classList.remove('failed');
+      peek.set.textContent = 'Cancel';
+      peek.keys.textContent = 'Press keys…';
+      peek.hint.textContent = 'Press the combination you want. Esc to cancel.';
+    });
+
+    peek.reset.addEventListener('click', () => {
+      stopListening();
+      window.library.setSettings({ peekShortcut: DEFAULT_PEEK }).then(fillSettings);
+    });
+
+    // Capture phase, so the chord never reaches the window's own shortcuts.
+    window.addEventListener('keydown', onCapture, true);
+  }
+
+  function fillPeek(state) {
+    if (peek.listening) return;
+    peek.keys.textContent = prettyAccelerator(state.peekShortcut);
+    peek.row.classList.toggle('failed', state.peekOk === false);
+    peek.hint.textContent = state.peekOk === false
+      ? 'Another app already owns that combination. Pick a different one.'
+      : 'Hold these keys anywhere in Windows to hide every note; let go and they come back.';
+  }
+
   function fillSettings(state) {
     if (!state) return;
     opacity.value = String(toPercent(state.opacity));
     opacityValue.textContent = `${toPercent(state.opacity)}%`;
     newPinned.checked = !!state.newNotesPinned;
     autostart.checked = !!state.autoStart;
+    fillPeek(state);
 
     swatches.replaceChildren(...state.palette.map((colour) => {
       const button = document.createElement('button');
@@ -132,6 +249,7 @@
     if (open) window.library.getSettings().then(fillSettings);
   }
 
+  setupPeek();
   gear.addEventListener('click', () => showSettings());
 
   // Applied live on every slider step so the effect is visible while dragging;

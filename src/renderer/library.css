@@ -244,6 +244,60 @@ body {
 
 body.showing-settings .foot { display: none; }
 
+/* ---------------------------------------------------------- shortcut rows */
+
+.shortcut { display: flex; align-items: center; gap: 8px; }
+
+kbd {
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--chip);
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.3;
+  white-space: nowrap;
+}
+
+#peek-keys { min-width: 108px; text-align: center; }
+
+.shortcut.listening #peek-keys {
+  border-style: dashed;
+  border-bottom-width: 1px;
+  color: var(--muted);
+}
+
+.shortcut.failed #peek-keys { border-color: #c4352c; color: #c4352c; }
+
+.ghost {
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: default;
+  transition: color 110ms linear, background-color 110ms linear;
+}
+
+.ghost:hover { color: var(--fg); background: var(--chip); }
+.ghost:focus-visible { outline: 1px solid var(--fg); outline-offset: -1px; }
+
+.keys {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 7px 12px;
+  margin: 0;
+  align-items: center;
+}
+
+.keys dt { display: flex; gap: 3px; }
+.keys dd { margin: 0; color: var(--muted); font-size: 11.5px; }
+
 /* --------------------------------------------------------------------- foot */
 
 .foot {

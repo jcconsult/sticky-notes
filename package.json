@@ -13,6 +13,7 @@
   "scripts": {
     "start": "electron .",
     "check": "node tools/check.js",
+    "test": "node test/format.test.js",
     "vendor": "node tools/vendor.js",
     "icon": "node tools/make-icon.js",
     "postinstall": "node tools/vendor.js",

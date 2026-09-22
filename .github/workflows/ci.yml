@@ -30,6 +30,9 @@ jobs:
       - name: Parse every source file
         run: npm run check
 
+      - name: Test the formatting engine
+        run: npm test
+
       # Packages the app without building an installer. Catches broken
       # electron-builder config and missing files long before a release tag.
       - name: Package (smoke test)

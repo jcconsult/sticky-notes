@@ -36,6 +36,9 @@ jobs:
       - name: Parse every source file
         run: npm run check
 
+      - name: Test the formatting engine
+        run: npm test
+
       - name: Build the installer
         run: npm run dist
 

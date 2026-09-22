@@ -11,7 +11,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const root = path.join(__dirname, '..');
-const roots = ['src', 'tools'];
+const roots = ['src', 'tools', 'test'];
 const skip = new Set(['vendor', 'node_modules']);
 
 function walk(dir, found = []) {

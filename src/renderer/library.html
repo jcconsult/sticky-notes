@@ -52,6 +52,32 @@
       <label for="autostart">Start with Windows</label>
       <input type="checkbox" id="autostart" />
     </div>
+
+    <div class="setting">
+      <div class="setting-head">
+        <label id="peek-label">Peek — hide notes while held</label>
+      </div>
+      <div class="shortcut">
+        <kbd id="peek-keys">Ctrl + Alt + H</kbd>
+        <button id="peek-set" class="ghost">Change</button>
+        <button id="peek-reset" class="ghost">Reset</button>
+      </div>
+      <p class="hint" id="peek-hint">
+        Hold these keys anywhere in Windows to hide every note; let go and they come back.
+      </p>
+    </div>
+
+    <div class="setting">
+      <div class="setting-head"><label>Inside a note</label></div>
+      <dl class="keys">
+        <dt><kbd>Ctrl</kbd><kbd>N</kbd></dt><dd>New note</dd>
+        <dt><kbd>Ctrl</kbd><kbd>E</kbd></dt><dd>Rendered ↔ source</dd>
+        <dt><kbd>Ctrl</kbd><kbd>↵</kbd></dt><dd>Done editing</dd>
+        <dt><kbd>Ctrl</kbd><kbd>B</kbd></dt><dd>Bold</dd>
+        <dt><kbd>Ctrl</kbd><kbd>I</kbd></dt><dd>Italic</dd>
+        <dt><kbd>Ctrl</kbd><kbd>K</kbd></dt><dd>Link</dd>
+      </dl>
+    </div>
   </section>
 
   <footer class="foot">

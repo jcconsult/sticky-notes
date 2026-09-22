@@ -43,9 +43,24 @@
     });
   }
 
+  // Stamp each rendered block with the source line it came from. The checkbox
+  // round-trip already relies on these line maps; exposing them in the DOM is
+  // what lets a double-click in the rendered view land on the same word in the
+  // source.
+  function sourceLines(md) {
+    md.core.ruler.push('sticky_source_lines', (state) => {
+      for (const token of state.tokens) {
+        if (token.type === 'inline' || !token.map) continue;
+        if (token.nesting === -1) continue; // closing tags carry no attributes
+        token.attrSet('data-line', String(token.map[0]));
+      }
+    });
+  }
+
   const md = window
     .markdownit({ html: false, linkify: true, breaks: true })
-    .use(taskLists);
+    .use(taskLists)
+    .use(sourceLines);
 
   // Every link leaves the app; the main process decides what is safe to open.
   const defaultLink = md.renderer.rules.link_open ||

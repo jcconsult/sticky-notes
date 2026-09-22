@@ -1,6 +1,7 @@
 const path = require('path');
 const {
   app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, nativeTheme, screen, shell, dialog,
+  globalShortcut,
 } = require('electron');
 
 const store = require('./store');
@@ -10,7 +11,16 @@ const DEFAULT_SETTINGS = {
   opacity: 1,               // 1 is solid; the slider offers down to 0.4
   defaultColor: DEFAULT_COLOR,
   newNotesPinned: true,
+  peekShortcut: 'Control+Alt+H',
 };
+
+// Windows waits out an initial delay before it starts repeating a held key —
+// a user setting, anywhere from 250ms to 1000ms — and only then repeats every
+// ~30ms. So the wait for the *second* fire has to clear the slowest possible
+// initial delay, or a held hotkey would flicker the notes back on in the gap.
+// Once repeats are flowing, a much shorter timeout detects the release.
+const PEEK_FIRST_MS = 1100;
+const PEEK_REPEAT_MS = 250;
 
 const NOTE_MIN = { width: 240, height: 180 };
 const NOTE_DEFAULT = { width: 340, height: 380 };
@@ -60,7 +70,59 @@ function applyOpacity(win, value) {
 }
 
 function applySettings(next) {
+  if (peeking) return; // a peek is in progress; endPeek will apply it
   for (const win of windows.values()) applyOpacity(win, next.opacity);
+}
+
+// ---------------------------------------------------------------------------
+// Peek — hide every note while the hotkey is held
+//
+// Electron's globalShortcut has no key-up event. Windows does, however, repeat
+// a held hotkey, so we hide on the first fire and treat a gap in the repeats as
+// the release. Opacity rather than hide(): hide() churns focus and window
+// state and flickers, where opacity is instant and reversible. A window at
+// zero opacity still swallows clicks, hence setIgnoreMouseEvents.
+
+let peeking = false;
+let peekTimer = null;
+
+function beginPeek() {
+  const first = !peeking;
+  if (first) {
+    peeking = true;
+    for (const win of windows.values()) {
+      if (win.isDestroyed()) continue;
+      win.setIgnoreMouseEvents(true);
+      win.setOpacity(0);
+    }
+  }
+  if (peekTimer) clearTimeout(peekTimer);
+  peekTimer = setTimeout(endPeek, first ? PEEK_FIRST_MS : PEEK_REPEAT_MS);
+}
+
+function endPeek() {
+  peekTimer = null;
+  if (!peeking) return;
+  peeking = false;
+  // Restore to the configured transparency, not to solid — peek and the
+  // transparency setting share the same window property.
+  const { opacity } = settings();
+  for (const win of windows.values()) {
+    if (win.isDestroyed()) continue;
+    win.setIgnoreMouseEvents(false);
+    applyOpacity(win, opacity);
+  }
+}
+
+function registerPeek(accelerator) {
+  globalShortcut.unregisterAll();
+  if (peeking) endPeek();
+  if (!accelerator) return true;
+  try {
+    return globalShortcut.register(accelerator, beginPeek);
+  } catch {
+    return false; // malformed accelerator
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -533,9 +595,12 @@ ipcMain.handle('library:delete', (_event, id) => confirmDelete(library, id));
 
 ipcMain.handle('library:new', () => newNote());
 
+let peekOk = true;
+
 ipcMain.handle('settings:get', () => ({
   ...settings(),
   autoStart: autoStartOn(),
+  peekOk,
   palette: PALETTE,
 }));
 
@@ -543,6 +608,16 @@ ipcMain.handle('settings:set', (_event, patch) => {
   if ('autoStart' in patch) setAutoStart(!!patch.autoStart);
 
   const next = { ...settings() };
+
+  if ('peekShortcut' in patch) {
+    const accelerator = typeof patch.peekShortcut === 'string' ? patch.peekShortcut : null;
+    peekOk = registerPeek(accelerator);
+    // Keep a rejected accelerator out of the store so a shortcut another app
+    // owns cannot wedge the setting permanently.
+    if (peekOk) next.peekShortcut = accelerator;
+    else registerPeek(next.peekShortcut);
+  }
+
   if (typeof patch.opacity === 'number' && Number.isFinite(patch.opacity)) {
     next.opacity = Math.min(Math.max(patch.opacity, 0.2), 1);
   }
@@ -553,7 +628,7 @@ ipcMain.handle('settings:set', (_event, patch) => {
 
   store.setUi('settings', next);
   applySettings(next);
-  return { ...next, autoStart: autoStartOn(), palette: PALETTE };
+  return { ...next, autoStart: autoStartOn(), peekOk, palette: PALETTE };
 });
 
 ipcMain.handle('library:minimise', () => {
@@ -582,6 +657,10 @@ if (!app.requestSingleInstanceLock()) {
 
     const notes = store.load();
     createTray();
+    peekOk = registerPeek(settings().peekShortcut);
+    if (!app.isPackaged) {
+      console.log(`[peek] ${settings().peekShortcut} registered: ${peekOk}`);
+    }
 
     if (!notes.length) {
       createNoteWindow(store.create({ markdown: WELCOME, mode: 'view' }));
@@ -616,4 +695,6 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     store.saveNow();
   });
+
+  app.on('will-quit', () => globalShortcut.unregisterAll());
 }

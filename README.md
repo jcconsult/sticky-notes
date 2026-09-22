@@ -35,7 +35,12 @@ No account, no sync, no subscription. Your notes are one JSON file on your disk.
 - **Custom colours** — six-colour palette, one colour per note, so a wall of
   notes stays scannable.
 - **Source view** — flip between rendered Markdown and the raw text with one
-  click or `Ctrl+E`.
+  click or `Ctrl+E`. Double-click a word in the rendered view and you land in
+  the source with that word already selected.
+- **Formatting toolbar** — select text while editing and a small toolbar
+  appears: bold, italic, strikethrough, code, link, heading, checklist.
+- **Peek** — hold a global hotkey to hide every note at once, release to bring
+  them back. Rebindable.
 - **All Notes** — every note in one list, open or closed. Reopen, close or
   delete from there.
 - **Adjustable transparency** — let the desktop show through as much as you like.
@@ -90,16 +95,35 @@ menu including *Start with Windows*.
 > On Windows 11 a new tray icon starts hidden under the `^` chevron. Drag it
 > out onto the tray so it is always one click away.
 
-**Settings** live behind the gear in the All Notes title bar.
+**Settings** live behind the gear in the All Notes title bar: note
+transparency, default colour for new notes, whether new notes start pinned,
+starting with Windows, and the peek shortcut. Click **Change** next to the
+shortcut and press the combination you want — if another app already owns it,
+it says so instead of failing quietly.
 
 ### Keyboard
 
 | Shortcut | Action |
 | --- | --- |
+| `Ctrl+Alt+H` | **Peek** — hold to hide every note, release to restore (rebindable) |
 | `Ctrl+N` | New note |
 | `Ctrl+E` | Toggle rendered / source |
+| `Ctrl+Enter` | Done editing — saves and shows the rendered view |
+| `Ctrl+B` `Ctrl+I` `Ctrl+K` | Bold, italic, link (in the source view) |
 | `Ctrl+V` | Paste Markdown — appends to the note and renders |
 | `Esc` | Leave the source view |
+
+Nothing needs saving — notes save as you type. `Ctrl+Enter` and `Esc` just
+commit the edit and show you the result.
+
+### Formatting
+
+Select any text in the source view and a toolbar appears above it with
+**B**, *I*, ~~S~~, `code`, link, heading and checklist. Every button toggles, so
+pressing **B** on bold text unbolds it.
+
+To format a word you can see in the rendered view, double-click it — that opens
+the source with the word selected and the toolbar up, ready for `Ctrl+B`.
 
 ### Where notes are stored
 
@@ -123,6 +147,7 @@ npm start
 | --- | --- |
 | `npm start` | Run the app from source |
 | `npm run check` | Parse every source file |
+| `npm test` | Run the formatting-engine tests |
 | `npm run pack:dir` | Package to `dist/win-unpacked` without an installer |
 | `npm run dist` | Build the installer into `dist/` |
 
@@ -134,6 +159,7 @@ src/main/store.js         the JSON file, debounced and written atomically
 src/preload/              the two IPC bridges (a note, and All Notes)
 src/renderer/note.js      one note window
 src/renderer/markdown.js  markdown-it plus the checkbox/source round-trip
+src/renderer/format.js    Markdown formatting operations on the textarea
 src/renderer/library.js   the All Notes list and Settings
 src/shared/palette.js     colours and themes, shared by main and renderers
 tools/make-icon.js        draws build/icon.ico, so no binaries are committed
@@ -143,13 +169,19 @@ No bundler and no frontend framework — plain HTML, CSS and JavaScript on
 Electron. `markdown-it` is the only runtime dependency, vendored into
 `src/vendor/` at install time so the sandboxed renderer can load it as a script.
 
-### Two details worth knowing
+### Details worth knowing
 
 - **Always on top** uses `setAlwaysOnTop(true, 'screen-saver')`. The plain
   `setAlwaysOnTop(true)` default silently loses to fullscreen windows.
 - **Checkbox toggles** rewrite one line of the source using the line number
   `markdown-it` records on each token, rather than re-serialising the document
   from its parse tree. That is what keeps your formatting intact.
+- **Formatting edits** go through `document.execCommand('insertText')`, which
+  is deprecated but is the only way to change a textarea's value while keeping
+  Chromium's native undo stack. `setRangeText()` silently destroys it.
+- **Peek** rides on the fact that Windows repeats a held hotkey: Electron's
+  `globalShortcut` has no key-up event, so a gap in the repeats stands in for
+  the release.
 
 ### Security
 

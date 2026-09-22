@@ -194,6 +194,61 @@ body.mode-edit #btn-mode .i-view { display: block; }
 }
 ::-webkit-scrollbar-thumb:hover { color: var(--muted); }
 
+/* ------------------------------------------------- selection toolbar */
+
+.tools {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  gap: 1px;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--chip);
+  box-shadow: 0 5px 16px rgba(0, 0, 0, 0.3);
+}
+
+.tools[hidden] { display: none; }
+
+.tools button {
+  min-width: 26px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--fg);
+  font-family: var(--font);
+  font-size: 12.5px;
+  line-height: 1;
+  cursor: default;
+  transition: background-color 110ms linear;
+}
+
+.tools button:hover { background: var(--line); }
+.tools button:active { background: var(--muted); }
+.tools button:focus-visible { outline: 1px solid var(--fg); outline-offset: -1px; }
+
+.tools button svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tools .sep {
+  width: 1px;
+  height: 15px;
+  margin: 0 3px;
+  background: var(--line);
+}
+
 /* -------------------------------------------------------------- markdown */
 
 .markdown > :first-child { margin-top: 0; }

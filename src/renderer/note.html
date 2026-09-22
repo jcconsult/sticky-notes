@@ -38,8 +38,26 @@
               placeholder="Write or paste Markdown…"></textarea>
   </main>
 
+  <div id="tools" class="tools" role="toolbar" aria-label="Formatting" hidden>
+    <button data-cmd="bold" title="Bold (Ctrl+B)" aria-label="Bold"><b>B</b></button>
+    <button data-cmd="italic" title="Italic (Ctrl+I)" aria-label="Italic"><i>I</i></button>
+    <button data-cmd="strike" title="Strikethrough" aria-label="Strikethrough"><s>S</s></button>
+    <button data-cmd="code" title="Inline code" aria-label="Inline code">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 4 2.6 8 6 12M10 4l3.4 4L10 12"/></svg>
+    </button>
+    <button data-cmd="link" title="Link (Ctrl+K)" aria-label="Link">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.6 9.4a2.6 2.6 0 0 0 3.7 0l2-2a2.6 2.6 0 0 0-3.7-3.7l-.8.8"/><path d="M9.4 6.6a2.6 2.6 0 0 0-3.7 0l-2 2a2.6 2.6 0 0 0 3.7 3.7l.8-.8"/></svg>
+    </button>
+    <span class="sep"></span>
+    <button data-cmd="heading" title="Heading" aria-label="Heading">H</button>
+    <button data-cmd="task" title="Checklist item" aria-label="Checklist item">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="11" height="11" rx="2.5"/><path d="M5.3 8.2 7.2 10l3.5-3.7"/></svg>
+    </button>
+  </div>
+
   <script src="../vendor/markdown-it.min.js"></script>
   <script src="markdown.js"></script>
+  <script src="format.js"></script>
   <script src="note.js"></script>
 </body>
 </html>
