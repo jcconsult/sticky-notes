@@ -307,8 +307,8 @@ function createNoteWindow(note) {
   });
 
   if (!app.isPackaged) {
-    win.webContents.on('console-message', (_e, _level, message, line, source) => {
-      console.log(`[note] ${message}  (${source}:${line})`);
+    win.webContents.on('console-message', ({ message, lineNumber, sourceId }) => {
+      console.log(`[note] ${message}  (${sourceId}:${lineNumber})`);
     });
   }
 
@@ -447,8 +447,8 @@ function createLibraryWindow() {
   library.on('hide', endRecording);
 
   if (!app.isPackaged) {
-    library.webContents.on('console-message', (_e, _level, message, line, source) => {
-      console.log(`[library] ${message}  (${source}:${line})`);
+    library.webContents.on('console-message', ({ message, lineNumber, sourceId }) => {
+      console.log(`[library] ${message}  (${sourceId}:${lineNumber})`);
     });
   }
 
@@ -474,7 +474,7 @@ function autoStartOn() {
 function setAutoStart(enabled) {
   // In development process.execPath is electron.exe, which needs the app
   // directory passed through or the login item would launch a blank Electron.
-  const options = { openAtLogin: enabled, openAsHidden: false };
+  const options = { openAtLogin: enabled };
   if (!app.isPackaged) {
     options.path = process.execPath;
     options.args = [path.resolve(app.getAppPath())];
