@@ -74,12 +74,13 @@
     const p = last || { loading: true };
     let text;
     if (p.refreshing) text = 'Refreshing…';
+    else if (p.failed) text = 'Couldn’t load · click to try again';
     else if (p.error) text = p.fetchedAt ? `${p.error} · showing ${clock(p.fetchedAt)}` : p.error;
     else if (p.fetchedAt) text = `Updated ${ago(p.fetchedAt)}${p.warning ? ` · ${p.warning}` : ''}`;
     else text = 'Loading…';
     el.footText.textContent = text;
     el.footSrc.textContent = (p.sources || []).join(' · ');
-    el.foot.classList.toggle('stale', !!p.error);
+    el.foot.classList.toggle('stale', !!p.error || !!p.failed);
     el.foot.classList.toggle('busy', !!p.refreshing);
   }
 

@@ -18,6 +18,9 @@ module.exports = {
   color: 'blue',
   refreshMinutes: 5,
 
+  // Offered when every calendar fails: the links are where it gets fixed.
+  fix: { label: 'Check calendar links…', target: { command: 'connections' } },
+
   settings: [
     {
       key: 'days', label: 'Show', type: 'choice', default: 2,

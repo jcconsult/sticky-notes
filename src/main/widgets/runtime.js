@@ -37,8 +37,14 @@ function createRuntime({ getNote, send, ctx, onSummary }) {
 
     let view;
     if (entry.data) view = def.view(entry.data, settings, Date.now());
-    else if (entry.error) view = { message: { text: 'Couldn’t load this widget.', detail: entry.error }, summary: 'Couldn’t load' };
-    else view = null; // first fetch still running
+    else if (entry.error) {
+      // A definition may say where its problems are fixed (the Agenda: its
+      // calendar links); the message then offers the way there.
+      view = {
+        message: { text: 'Couldn’t load this widget.', detail: entry.error, action: def.fix || null },
+        summary: 'Couldn’t load',
+      };
+    } else view = null; // first fetch still running
 
     const rendered = view ? format.render(view) : { markdown: '', actions: {} };
     entry.actions = rendered.actions;
@@ -52,6 +58,7 @@ function createRuntime({ getNote, send, ctx, onSummary }) {
       refreshing: entry.busy,
       fetchedAt: entry.fetchedAt,
       error: entry.data ? entry.error : null, // with no data, the error is the content
+      failed: !entry.data && !!entry.error,
       warning: entry.warning,
       sources: (entry.data && entry.data.sources) || [],
     };
