@@ -43,6 +43,9 @@ No account, no sync, no subscription. Your notes are one JSON file on your disk.
   press again to bring them back, or they return on their own once you stop
   using the mouse and keyboard. Hold the key instead to hide them only while
   it is held. Rebindable.
+- **Widgets** — notes the app writes for you, in the same style. The first is
+  **Agenda**: today and tomorrow from your Google and Outlook calendars, with
+  what's on now highlighted and a Join button for Teams, Meet and Zoom.
 - **All Notes** — every note in one list, open or closed. Reopen, close or
   delete from there.
 - **Adjustable transparency** — let the desktop show through as much as you like.
@@ -130,6 +133,32 @@ pressing **B** on bold text unbolds it.
 To format a word you can see in the rendered view, double-click it — that opens
 the source with the word selected and the toolbar up, ready for `Ctrl+B`.
 
+### Widgets
+
+**All Notes → New widget** (or the tray's *New widget* menu) adds one. A widget
+looks and behaves like a note — colour, pin, transparency, `F1` — but its text
+is written by the app, so it cannot be edited:
+
+- the **⚙ gear** swaps the content for the widget's settings;
+- the **footer** says how fresh it is; click it to refresh now;
+- **right-click** for settings, refresh, **Copy to note** (a frozen, editable
+  copy), close and delete.
+
+**Agenda** needs a calendar link, added in **All Notes → Settings →
+Calendars** (the widget's *Add a calendar link…* takes you there):
+
+| Calendar | Where the link is |
+| --- | --- |
+| Google | Settings → your calendar → **Integrate calendar** → *Secret address in iCal format* |
+| Outlook | Settings → **Calendar → Shared calendars → Publish a calendar**, with *Can view all details* → the ICS link |
+
+Each link is checked when you add it and refused, with the reason, if it does
+not work. Google's *public* address only works for calendars shared with
+everyone — use the secret one. Links are stored encrypted for your Windows
+account in `%APPDATA%\sticky-notes\connections.json`, never in `notes.json`,
+so a copied notes file carries no calendar access. Agenda refreshes every five
+minutes, when Windows wakes or unlocks, and at midnight.
+
 ### Where notes are stored
 
 `%APPDATA%\sticky-notes\notes.json` — a single plain JSON file holding the
@@ -160,7 +189,7 @@ written. `npm run dev:reset` discards that copy (quit the dev app first).
 | `npm run dev:reset` | Throw the dev copy away; the next `dev` run copies your notes again |
 | `npm start` | Run the checkout as the real app, on your real notes (quit the installed one first) |
 | `npm run check` | Parse every source file |
-| `npm test` | Run the formatting-engine and hide-shortcut tests |
+| `npm test` | Run the formatting, hide-shortcut and widget tests |
 | `npm run pack:dir` | Package to `dist/win-unpacked` without an installer |
 | `npm run dist` | Build the installer into `dist/` |
 
@@ -170,8 +199,17 @@ written. `npm run dev:reset` discards that copy (quit the dev app first).
 src/main/main.js          windows, tray, settings — all OS-facing behaviour
 src/main/store.js         the JSON file, debounced and written atomically
 src/main/hide.js          the hide shortcut: tap, hold and idle return
-src/preload/              the two IPC bridges (a note, and All Notes)
+src/main/connections.js   calendar links, encrypted with safeStorage
+src/main/widgets/         the widget framework and the Agenda widget
+  index.js                  registry: definitions and their settings rules
+  runtime.js                fetch schedule, minute redraw, action tables
+  format.js                 rows → Markdown; the one place widgets are styled
+  agenda.js                 Agenda: settings, fetch, view
+  agenda-view.js            events → rows for a given moment (pure)
+  ics.js                    iCalendar → events (ical.js)
+src/preload/              the IPC bridges: a note, a widget, and All Notes
 src/renderer/note.js      one note window
+src/renderer/widget.js    one widget window: content, settings form, footer
 src/renderer/markdown.js  markdown-it plus the checkbox/source round-trip
 src/renderer/format.js    Markdown formatting operations on the textarea
 src/renderer/library.js   the All Notes list and Settings
@@ -180,8 +218,15 @@ tools/make-icon.js        draws build/icon.ico, so no binaries are committed
 ```
 
 No bundler and no frontend framework — plain HTML, CSS and JavaScript on
-Electron. `markdown-it` is the only runtime dependency, vendored into
-`src/vendor/` at install time so the sandboxed renderer can load it as a script.
+Electron. `markdown-it` is vendored into `src/vendor/` at install time so the
+sandboxed renderer can load it as a script; `ical.js` (Mozilla's iCalendar
+parser) is the one dependency the main process loads from `node_modules`.
+
+**Adding a widget** means one definition in `src/main/widgets/` — its settings
+(as a list the framework draws and validates), `fetch(settings, ctx)` for the
+slow part and a pure `view(data, settings, now)` returning rows — registered in
+`widgets/index.js`. A widget never writes Markdown or builds UI, which is what
+keeps every widget looking the same.
 
 ### Details worth knowing
 
@@ -210,6 +255,12 @@ Electron. `markdown-it` is the only runtime dependency, vendored into
 Renderers run sandboxed with `contextIsolation` enabled and no Node access.
 `markdown-it` runs with `html: false`, so pasted content cannot inject markup.
 Links are opened by the main process, and only `http`, `https` and `mailto`.
+
+Widget text comes from other people (calendar invites), so it is escaped by
+the formatter and rendered without linkify: only the formatter makes links,
+and each is an opaque id whose target stays in the main process. Join buttons
+are made only for Teams, Meet and Zoom addresses. A widget window's preload
+cannot write its content, and the main process refuses to if asked.
 
 ## Releasing
 
