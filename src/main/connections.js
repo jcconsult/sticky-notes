@@ -63,10 +63,12 @@ function list() {
   return load().calendars.map(({ id, label, host }) => ({ id, label, host }));
 }
 
+const INVALID = 'That doesn’t look like a calendar link. It should start with https:// or webcal://.';
+
 /** @returns {{ ok: boolean, error?: string }} */
 function addCalendar(input) {
   const url = normalise(input);
-  if (!url) return { ok: false, error: 'That doesn’t look like a calendar link. It should start with https:// or webcal://.' };
+  if (!url) return { ok: false, error: INVALID };
   if (!safeStorage.isEncryptionAvailable()) {
     return { ok: false, error: 'Windows can’t encrypt the link on this account, so it was not saved.' };
   }
@@ -99,4 +101,4 @@ function calendarUrls() {
   return { urls, unreadable };
 }
 
-module.exports = { list, addCalendar, removeCalendar, calendarUrls };
+module.exports = { list, addCalendar, removeCalendar, calendarUrls, normalise, INVALID };

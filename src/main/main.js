@@ -682,16 +682,55 @@ function ownerId(event) {
 
 // net.fetch goes through Chromium's network stack, so a system or corporate
 // proxy is honoured exactly as it is in a browser.
+// Errors are worded for the footer and the Calendars setting: what went
+// wrong, in words, with the status code for anyone who wants it.
+const HTTP_REASONS = {
+  401: 'needs signing in',
+  403: 'access denied',
+  404: 'link not found',
+  410: 'link no longer exists',
+};
+
 async function fetchText(url) {
-  const response = await net.fetch(url, {
-    signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
-    headers: { accept: 'text/calendar, text/plain;q=0.9, */*;q=0.1' },
-  });
-  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  let response;
+  try {
+    response = await net.fetch(url, {
+      signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
+      headers: { accept: 'text/calendar, text/plain;q=0.9, */*;q=0.1' },
+    });
+  } catch (err) {
+    throw new Error(err && err.name === 'TimeoutError' ? 'timed out' : 'no connection');
+  }
+  if (!response.ok) {
+    const error = new Error(`${HTTP_REASONS[response.status] || 'server error'} (${response.status})`);
+    error.status = response.status;
+    throw error;
+  }
   if (Number(response.headers.get('content-length') || 0) > FEED_MAX_BYTES) throw new Error('too large');
   const text = await response.text();
   if (text.length > FEED_MAX_BYTES) throw new Error('too large');
   return text;
+}
+
+// Checked when a link is added, so a link that cannot work is refused where
+// it was pasted, with a reason — not saved and left to fail in a widget.
+async function checkCalendar(url) {
+  try {
+    const text = await fetchText(url);
+    if (!/^﻿?\s*BEGIN:VCALENDAR/i.test(text)) {
+      return 'That link opens a web page, not a calendar. Copy the iCal (ICS) address instead.';
+    }
+    return null;
+  } catch (err) {
+    const parsed = new URL(url);
+    if (err.status === 404 && /google\.com$/i.test(parsed.hostname) && parsed.pathname.includes('/public/')) {
+      return 'Google says that link doesn’t exist: it is the calendar’s public address, which only works for calendars shared with everyone. Use “Secret address in iCal format” instead.';
+    }
+    if (err.status === 404 || err.status === 410) {
+      return `The calendar didn’t accept that link (${err.message}). Copy it again from the calendar’s settings.`;
+    }
+    return `Couldn’t read that calendar: ${err.message}.`;
+  }
 }
 
 const runtime = createRuntime({
@@ -880,15 +919,20 @@ ipcMain.handle('library:newWidget', () => {
 // Calendar links: the renderer sees labels and hosts, never the links.
 ipcMain.handle('connections:list', () => connections.list());
 
-ipcMain.handle('connections:add', (_event, url) => {
-  const result = connections.addCalendar(url);
-  if (result.ok) runtime.refreshAll();
+ipcMain.handle('connections:add', async (_event, input) => {
+  const url = connections.normalise(input);
+  if (!url) return { ok: false, error: connections.INVALID, calendars: connections.list() };
+  const problem = await checkCalendar(url.href);
+  if (problem) return { ok: false, error: problem, calendars: connections.list() };
+  const result = connections.addCalendar(url.href);
+  // What widgets showed was true of the old set of calendars; start over.
+  if (result.ok) runtime.refreshAll({ reset: true });
   return { ...result, calendars: connections.list() };
 });
 
 ipcMain.handle('connections:remove', (_event, id) => {
   connections.removeCalendar(id);
-  runtime.refreshAll();
+  runtime.refreshAll({ reset: true });
   return connections.list();
 });
 

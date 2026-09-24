@@ -293,10 +293,14 @@
     }));
   }
 
+  // The link is fetched once before it is saved, which takes a moment.
   function addCalendar() {
     const url = calendarUrl.value.trim();
-    if (!url) return;
+    if (!url || calendarAdd.disabled) return;
+    calendarAdd.disabled = true;
+    hint('Checking the link…');
     window.library.addCalendar(url).then((result) => {
+      calendarAdd.disabled = false;
       fillCalendars(result.calendars);
       if (result.ok) {
         calendarUrl.value = '';

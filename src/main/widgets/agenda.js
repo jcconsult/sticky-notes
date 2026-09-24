@@ -41,15 +41,17 @@ module.exports = {
     const results = await Promise.allSettled(urls.map(({ url }) => ctx.fetchText(url)));
     const events = [];
     const failed = [];
+    // Each failure names the calendar and says why, e.g. "Google Calendar:
+    // link not found (404)" — a bare "couldn't reach" leaves nothing to act on.
     results.forEach((result, i) => {
       if (result.status === 'rejected') {
-        failed.push(urls[i].label);
+        failed.push(`${urls[i].label}: ${(result.reason && result.reason.message) || 'failed'}`);
         return;
       }
       try {
         events.push(...parse(result.value, from, to));
       } catch {
-        failed.push(urls[i].label);
+        failed.push(`${urls[i].label}: not a readable calendar`);
       }
     });
 
@@ -63,15 +65,15 @@ module.exports = {
       return true;
     });
 
-    if (unreadable) failed.push(`${unreadable} link${unreadable === 1 ? '' : 's'} saved on another PC`);
+    if (unreadable) failed.push(`${unreadable} link${unreadable === 1 ? '' : 's'} saved on another PC — add again`);
     if (failed.length === urls.length + (unreadable ? 1 : 0)) {
-      throw new Error(`Couldn’t reach ${failed.join(', ')}`);
+      throw new Error(failed.join('; '));
     }
     return {
       connected: true,
       events: unique,
       sources: [...new Set(urls.map((u) => u.label))],
-      warning: failed.length ? `Couldn’t reach ${failed.join(', ')}` : null,
+      warning: failed.length ? failed.join('; ') : null,
     };
   },
 

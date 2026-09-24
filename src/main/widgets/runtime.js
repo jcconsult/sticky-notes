@@ -115,8 +115,19 @@ function createRuntime({ getNote, send, ctx, onSummary }) {
     }
   }, TICK_MS);
 
-  function refreshAll() {
-    for (const id of live.keys()) refresh(id);
+  // `reset` when what a widget showed is no longer true — calendars added or
+  // removed — so it shows "Loading…" and then the new result, never the old
+  // content with a new error under it.
+  function refreshAll({ reset = false } = {}) {
+    for (const [id, entry] of live) {
+      if (reset) {
+        entry.data = null;
+        entry.error = null;
+        entry.warning = null;
+        entry.fetchedAt = null;
+      }
+      refresh(id);
+    }
   }
 
   // Only ids this widget's last render created; anything else does nothing.
