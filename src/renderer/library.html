@@ -55,15 +55,32 @@
 
     <div class="setting">
       <div class="setting-head">
-        <label id="peek-label">Peek — hide notes while held</label>
+        <label id="peek-label">Hide notes</label>
       </div>
       <div class="shortcut">
-        <kbd id="peek-keys">Ctrl + Alt + H</kbd>
+        <kbd id="peek-keys">F1</kbd>
         <button id="peek-set" class="ghost">Change</button>
         <button id="peek-reset" class="ghost">Reset</button>
       </div>
       <p class="hint" id="peek-hint">
-        Hold these keys anywhere in Windows to hide every note; let go and they come back.
+        Press to hide or show every note; hold it to hide them only while held.
+      </p>
+    </div>
+
+    <div class="setting">
+      <div class="setting-head">
+        <label for="auto-show">Bring hidden notes back</label>
+      </div>
+      <select id="auto-show" class="select">
+        <option value="15">After 15 seconds idle</option>
+        <option value="30">After 30 seconds idle</option>
+        <option value="60">After 1 minute idle</option>
+        <option value="300">After 5 minutes idle</option>
+        <option value="0">Never</option>
+      </select>
+      <p class="hint">
+        Idle means no mouse or keyboard input, so notes never reappear while you are
+        working in the app behind them.
       </p>
     </div>
 

@@ -229,6 +229,19 @@ body {
 
 .setting.switch input { width: 15px; height: 15px; margin: 0; }
 
+.select {
+  width: 100%;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--chip);
+  color: var(--fg);
+  font: inherit;
+  cursor: default;
+}
+
+.select:focus-visible { outline: 1px solid var(--fg); outline-offset: 1px; }
+
 .swatches { display: flex; gap: 10px; }
 
 .swatches button {

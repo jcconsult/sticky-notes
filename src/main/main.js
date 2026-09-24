@@ -1,26 +1,50 @@
+const fs = require('fs');
 const path = require('path');
 const {
   app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, nativeTheme, screen, shell, dialog,
-  globalShortcut,
+  globalShortcut, powerMonitor,
 } = require('electron');
 
 const store = require('./store');
+const { createHider } = require('./hide');
 const { PALETTE, THEMES, DEFAULT_COLOR, colorOf } = require('../shared/palette');
 
 const DEFAULT_SETTINGS = {
   opacity: 1,               // 1 is solid; the slider offers down to 0.4
   defaultColor: DEFAULT_COLOR,
   newNotesPinned: true,
-  peekShortcut: 'Control+Alt+H',
+  // F1 is Help almost everywhere, and a duplicate of Ctrl+Shift+P in VS Code
+  // and Cursor, so taking it costs nothing. Ctrl+Alt chords are avoided: on
+  // many European layouts Ctrl+Alt is AltGr, which types @, £, $ and braces.
+  peekShortcut: 'F1',
+  autoShowAfter: 30,        // seconds idle before tapped-away notes return; 0 = never
 };
 
-// Windows waits out an initial delay before it starts repeating a held key —
-// a user setting, anywhere from 250ms to 1000ms — and only then repeats every
-// ~30ms. So the wait for the *second* fire has to clear the slowest possible
-// initial delay, or a held hotkey would flicker the notes back on in the gap.
-// Once repeats are flowing, a much shorter timeout detects the release.
-const PEEK_FIRST_MS = 1100;
-const PEEK_REPEAT_MS = 250;
+const AUTO_SHOW_CHOICES = [0, 15, 30, 60, 300];
+
+// A key on its own is only allowed if nothing types with it. F12 is excluded
+// outright: Windows reserves it for debuggers and RegisterHotKey refuses it.
+const LONE_KEY = /^F([1-9]|1[013-9]|2[0-4])$/;
+
+const SHOW_FADE_MS = 200;
+
+// `npm run dev` runs this checkout as a separate app beside the installed
+// one. Its data folder — which is also where the single-instance lock lives —
+// is its own, and on first run it starts from a copy of the real notes. The
+// real notes file is never written. `npm run dev:reset` discards the copy.
+const DEV = !app.isPackaged && process.argv.includes('--dev');
+const DEV_DATA = 'sticky-notes-dev';
+
+function useDevData() {
+  const real = path.join(app.getPath('userData'), 'notes.json');
+  const dir = path.join(app.getPath('appData'), DEV_DATA);
+  app.setPath('userData', dir);
+  const copy = path.join(dir, 'notes.json');
+  if (!fs.existsSync(copy) && fs.existsSync(real)) {
+    fs.mkdirSync(dir, { recursive: true });
+    fs.copyFileSync(real, copy);
+  }
+}
 
 const NOTE_MIN = { width: 240, height: 180 };
 const NOTE_DEFAULT = { width: 340, height: 380 };
@@ -70,56 +94,91 @@ function applyOpacity(win, value) {
 }
 
 function applySettings(next) {
-  if (peeking) return; // a peek is in progress; endPeek will apply it
+  if (hider.isHidden()) return; // showing the notes again applies it
   for (const win of windows.values()) applyOpacity(win, next.opacity);
 }
 
 // ---------------------------------------------------------------------------
-// Peek — hide every note while the hotkey is held
+// Hiding every note — one shortcut: tap to toggle, hold to peek
 //
-// Electron's globalShortcut has no key-up event. Windows does, however, repeat
-// a held hotkey, so we hide on the first fire and treat a gap in the repeats as
-// the release. Opacity rather than hide(): hide() churns focus and window
-// state and flickers, where opacity is instant and reversible. A window at
-// zero opacity still swallows clicks, hence setIgnoreMouseEvents.
+// hide.js decides *when*; this is *how*. Opacity rather than hide(): hide()
+// churns focus and window state and flickers, where opacity is instant and
+// reversible. A window at zero opacity still swallows clicks, hence
+// setIgnoreMouseEvents — the whole point is reaching the app behind.
 
-let peeking = false;
-let peekTimer = null;
+let fadeTimer = null;
 
-function beginPeek() {
-  const first = !peeking;
-  if (first) {
-    peeking = true;
-    for (const win of windows.values()) {
-      if (win.isDestroyed()) continue;
-      win.setIgnoreMouseEvents(true);
-      win.setOpacity(0);
-    }
-  }
-  if (peekTimer) clearTimeout(peekTimer);
-  peekTimer = setTimeout(endPeek, first ? PEEK_FIRST_MS : PEEK_REPEAT_MS);
+function devLog(message) {
+  if (!app.isPackaged) console.log(`${new Date().toTimeString().slice(0, 8)}.${String(Date.now() % 1000).padStart(3, '0')} ${message}`);
 }
 
-function endPeek() {
-  peekTimer = null;
-  if (!peeking) return;
-  peeking = false;
-  // Restore to the configured transparency, not to solid — peek and the
-  // transparency setting share the same window property.
-  const { opacity } = settings();
+function stopFade() {
+  if (fadeTimer) clearInterval(fadeTimer);
+  fadeTimer = null;
+}
+
+// Focus is deliberately left alone. setFocusable() and blur() on Windows
+// hand focus to whichever window is next in the z-order — measured landing on
+// Teams, Outlook or another hidden note — so the user's next keys went
+// somewhere they never chose. Keystrokes into a hidden note are blocked
+// instead, in createNoteWindow.
+function hideAllNotes() {
+  stopFade();
   for (const win of windows.values()) {
     if (win.isDestroyed()) continue;
-    win.setIgnoreMouseEvents(false);
-    applyOpacity(win, opacity);
+    win.setIgnoreMouseEvents(true);
+    win.setOpacity(0);
   }
+  refreshTray();
+  devLog(`[hide] hidden (${windows.size} notes)`);
+}
+
+// Back to the configured transparency, not to solid — hiding and the
+// transparency setting share the same window property. Hiding is instant;
+// notes that come back on their own fade in, so their return is noticed
+// without being jarring.
+function showAllNotes(reason) {
+  stopFade();
+  const target = Math.min(Math.max(settings().opacity, 0.2), 1);
+  const live = () => [...windows.values()].filter((win) => !win.isDestroyed());
+  for (const win of live()) win.setIgnoreMouseEvents(false);
+  refreshTray();
+  devLog(`[hide] shown (${reason})`);
+
+  if (reason !== 'idle') {
+    for (const win of live()) win.setOpacity(target);
+    return;
+  }
+  const start = Date.now();
+  fadeTimer = setInterval(() => {
+    const t = Math.min((Date.now() - start) / SHOW_FADE_MS, 1);
+    for (const win of live()) win.setOpacity(target * t);
+    if (t === 1) stopFade();
+  }, 16);
+}
+
+const hider = createHider({
+  hide: hideAllNotes,
+  show: showAllNotes,
+  idleSeconds: () => powerMonitor.getSystemIdleTime(),
+  autoShowAfter: () => settings().autoShowAfter,
+});
+
+function validShortcut(accelerator) {
+  return typeof accelerator === 'string' &&
+    (accelerator.includes('+') || LONE_KEY.test(accelerator));
 }
 
 function registerPeek(accelerator) {
   globalShortcut.unregisterAll();
-  if (peeking) endPeek();
+  hider.reset();
   if (!accelerator) return true;
+  if (!validShortcut(accelerator)) return false;
   try {
-    return globalShortcut.register(accelerator, beginPeek);
+    return globalShortcut.register(accelerator, () => {
+      devLog(`[hide] ${accelerator} pressed`);
+      hider.press();
+    });
   } catch {
     return false; // malformed accelerator
   }
@@ -220,6 +279,11 @@ function createNoteWindow(note) {
   win.once('ready-to-show', () => {
     applyPin(win, note.pinned);
     applyOpacity(win, settings().opacity);
+    // A window that finishes loading while notes are hidden joins them.
+    if (hider.isHidden()) {
+      win.setIgnoreMouseEvents(true);
+      win.setOpacity(0);
+    }
     if (note.visible !== false) win.show();
   });
 
@@ -248,6 +312,12 @@ function createNoteWindow(note) {
     });
   }
 
+  // A note typed in just before hiding keeps focus; its keystrokes and pastes
+  // must not land in text nobody can see.
+  win.webContents.on('before-input-event', (event) => {
+    if (hider.isHidden()) event.preventDefault();
+  });
+
   // Links in a note open in the real browser, never inside the note.
   win.webContents.setWindowOpenHandler(({ url }) => {
     openExternal(url);
@@ -273,9 +343,11 @@ function showWindow(win) {
   win.focus();
 }
 
+// Asking for a note while every note is hidden means wanting them back.
 function showNote(id) {
   const note = store.get(id);
   if (!note) return;
+  hider.reset();
   store.update(id, { visible: true });
   const win = windows.get(id);
   if (win && !win.isDestroyed()) showWindow(win);
@@ -291,6 +363,7 @@ function hideNote(id) {
 }
 
 function newNote(nearId) {
+  hider.reset();
   const near = nearId ? store.get(nearId) : null;
   const prefs = settings();
   // A note made from another note inherits its colour; anything else uses the
@@ -369,6 +442,10 @@ function createLibraryWindow() {
     library.hide();
   });
 
+  // Belt and braces for the renderer's own cleanup: a window hidden while
+  // recording a shortcut must not leave the hotkey unregistered.
+  library.on('hide', endRecording);
+
   if (!app.isPackaged) {
     library.webContents.on('console-message', (_e, _level, message, line, source) => {
       console.log(`[library] ${message}  (${source}:${line})`);
@@ -409,13 +486,14 @@ function setAutoStart(enabled) {
 // ---------------------------------------------------------------------------
 // Tray
 
-function trayImage() {
-  // Drawn in code so the app ships with no image assets: a rounded square in
-  // the default note colour, anti-aliased via a rounded-rect distance field.
+// Drawn in code so the app ships with no image assets: a rounded square in
+// the default note colour, anti-aliased via a rounded-rect distance field.
+// `dim` draws it faded, which is how the tray shows the notes are hidden.
+function trayImage(dim = false) {
   const size = 32;
   const pad = 3;
   const radius = 7;
-  const { dot } = colorOf('amber');
+  const { dot } = colorOf(DEV ? 'purple' : 'amber'); // purple: the dev build
   const r = parseInt(dot.slice(1, 3), 16);
   const g = parseInt(dot.slice(3, 5), 16);
   const b = parseInt(dot.slice(5, 7), 16);
@@ -432,7 +510,7 @@ function trayImage() {
         Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) +
         Math.min(Math.max(qx, qy), 0) -
         radius;
-      const a = Math.min(Math.max(0.5 - d, 0), 1);
+      const a = Math.min(Math.max(0.5 - d, 0), 1) * (dim ? 0.35 : 1);
       const i = (y * size + x) * 4;
       buf[i] = Math.round(b * a); // BGRA, premultiplied
       buf[i + 1] = Math.round(g * a);
@@ -443,9 +521,21 @@ function trayImage() {
   return nativeImage.createFromBitmap(buf, { width: size, height: size, scaleFactor: 2 });
 }
 
+const trayImages = {};
+
+function prettyShortcut(accelerator) {
+  return (accelerator || '').replace(/Control/g, 'Ctrl').replace(/Super/g, 'Win');
+}
+
 function refreshTray() {
   if (!tray) return;
+  const hidden = hider.isHidden();
+  const key = hidden ? 'dim' : 'full';
+  if (!trayImages[key]) trayImages[key] = trayImage(hidden);
+  tray.setImage(trayImages[key]);
+
   const notes = store.all();
+  const shortcut = prettyShortcut(settings().peekShortcut);
   const items = notes.slice(0, 12).map((note) => ({
     label: noteTitle(note),
     type: 'checkbox',
@@ -456,14 +546,23 @@ function refreshTray() {
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'All notes…', click: showLibrary },
     { label: 'New note', click: () => newNote() },
+    {
+      label: `${hidden ? 'Show' : 'Hide'} notes`,
+      // Shown beside the item only; the global shortcut does the real work.
+      accelerator: settings().peekShortcut || undefined,
+      registerAccelerator: false,
+      click: () => hider.toggle(),
+    },
     { type: 'separator' },
     ...(items.length ? items : [{ label: 'No notes yet', enabled: false }]),
     ...(notes.length > items.length
       ? [{ label: `…and ${notes.length - items.length} more`, enabled: false }]
       : []),
     { type: 'separator' },
-    { label: 'Show all', click: () => store.all().forEach((n) => showNote(n.id)) },
-    { label: 'Hide all', click: () => store.all().forEach((n) => hideNote(n.id)) },
+    // Opening and closing windows — distinct from "Hide notes" above, which
+    // only makes the open ones invisible for a while.
+    { label: 'Open all notes', click: () => store.all().forEach((n) => showNote(n.id)) },
+    { label: 'Close all notes', click: () => store.all().forEach((n) => hideNote(n.id)) },
     { type: 'separator' },
     {
       label: 'Start with Windows',
@@ -474,12 +573,16 @@ function refreshTray() {
     { type: 'separator' },
     { label: 'Quit Sticky Notes', click: () => app.quit() },
   ]));
-  tray.setToolTip(`Sticky Notes — ${notes.length} note${notes.length === 1 ? '' : 's'}`);
+  const name = DEV ? 'Sticky Notes (dev)' : 'Sticky Notes';
+  tray.setToolTip(hidden
+    ? `${name} — notes hidden${shortcut ? ` (${shortcut} to show)` : ''}`
+    : `${name} — ${notes.length} note${notes.length === 1 ? '' : 's'}`);
 }
 
 function createTray() {
   tray = new Tray(trayImage());
-  tray.on('click', showLibrary); // the discoverable way back to everything
+  // The discoverable way back to everything — including hidden notes.
+  tray.on('click', () => (hider.isHidden() ? hider.reset() : showLibrary()));
   refreshTray();
 }
 
@@ -625,10 +728,31 @@ ipcMain.handle('settings:set', (_event, patch) => {
     next.defaultColor = patch.defaultColor;
   }
   if ('newNotesPinned' in patch) next.newNotesPinned = !!patch.newNotesPinned;
+  if (AUTO_SHOW_CHOICES.includes(patch.autoShowAfter)) next.autoShowAfter = patch.autoShowAfter;
 
   store.setUi('settings', next);
   applySettings(next);
+  refreshTray(); // the menu shows the shortcut
   return { ...next, autoStart: autoStartOn(), peekOk, palette: PALETTE };
+});
+
+// While Settings records a new shortcut, the current one must not fire:
+// the global hotkey would swallow the very keys being recorded.
+let recordingShortcut = false;
+
+function endRecording() {
+  if (!recordingShortcut) return;
+  recordingShortcut = false;
+  peekOk = registerPeek(settings().peekShortcut);
+}
+
+ipcMain.handle('settings:recording', (_event, recording) => {
+  if (recording) {
+    recordingShortcut = true;
+    registerPeek(null);
+  } else {
+    endRecording();
+  }
 });
 
 ipcMain.handle('library:minimise', () => {
@@ -641,6 +765,8 @@ ipcMain.handle('library:close', () => {
 
 // ---------------------------------------------------------------------------
 // Lifecycle
+
+if (DEV) useDevData();
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();

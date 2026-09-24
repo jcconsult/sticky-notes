@@ -10,6 +10,7 @@ contextBridge.exposeInMainWorld('library', {
   close: () => ipcRenderer.invoke('library:close'),
   getSettings: () => ipcRenderer.invoke('settings:get'),
   setSettings: (patch) => ipcRenderer.invoke('settings:set', patch),
+  recording: (on) => ipcRenderer.invoke('settings:recording', !!on),
   onChange: (cb) => ipcRenderer.on('library:changed', (_e, notes) => cb(notes)),
   onTheme: (cb) => ipcRenderer.on('library:theme', (_e, theme) => cb(theme)),
 });

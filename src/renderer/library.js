@@ -93,6 +93,7 @@
   const swatches = document.getElementById('default-color');
   const newPinned = document.getElementById('new-pinned');
   const autostart = document.getElementById('autostart');
+  const autoShow = document.getElementById('auto-show');
 
   // Stored as opacity (1 = solid) but shown as transparency, which is what
   // the slider label promises.
@@ -101,7 +102,8 @@
 
   // ------------------------------------------------------ shortcut capture
 
-  const DEFAULT_PEEK = 'Control+Alt+H';
+  const DEFAULT_PEEK = 'F1';
+  const HOW_IT_WORKS = 'Press to hide or show every note; hold it to hide them only while held.';
   const peek = {
     row: null, keys: null, set: null, reset: null, hint: null, listening: false,
   };
@@ -118,11 +120,12 @@
 
   // Only letters, digits and function keys — enough to express any sane
   // chord, and it keeps us clear of keys whose Electron names differ by layout.
+  // F12 is left out: Windows reserves it for debuggers.
   function keyName(event) {
     const { code } = event;
     if (/^Key[A-Z]$/.test(code)) return code.slice(3);
     if (/^Digit[0-9]$/.test(code)) return code.slice(5);
-    if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+    if (/^F([1-9]|1[013-9]|2[0-4])$/.test(code)) return code;
     return null;
   }
 
@@ -134,8 +137,9 @@
     if (event.altKey) parts.push('Alt');
     if (event.shiftKey) parts.push('Shift');
     if (event.metaKey) parts.push('Super');
-    // A bare letter would swallow that key for every app on the machine.
-    if (!parts.length) return null;
+    // A bare letter or digit would swallow that key for every app on the
+    // machine; a function key on its own types nothing, so it may stand alone.
+    if (!parts.length && !/^F\d+$/.test(key)) return null;
     parts.push(key);
     return parts.join('+');
   }
@@ -144,6 +148,7 @@
     peek.listening = false;
     peek.row.classList.remove('listening');
     peek.set.textContent = 'Change';
+    window.library.recording(false);
   }
 
   function onCapture(event) {
@@ -168,7 +173,7 @@
 
     const accelerator = acceleratorFrom(event);
     if (!accelerator) {
-      peek.hint.textContent = 'Use at least one modifier plus a letter, number or F-key.';
+      peek.hint.textContent = 'Use an F-key, or a modifier plus a letter or number.';
       return;
     }
 
@@ -194,7 +199,8 @@
       peek.row.classList.remove('failed');
       peek.set.textContent = 'Cancel';
       peek.keys.textContent = 'Press keys…';
-      peek.hint.textContent = 'Press the combination you want. Esc to cancel.';
+      peek.hint.textContent = 'Press the key or combination you want. Esc to cancel.';
+      window.library.recording(true);
     });
 
     peek.reset.addEventListener('click', () => {
@@ -204,15 +210,23 @@
 
     // Capture phase, so the chord never reaches the window's own shortcuts.
     window.addEventListener('keydown', onCapture, true);
+
+    // Keys stop arriving once the window loses focus, so recording ends too.
+    window.addEventListener('blur', () => {
+      if (!peek.listening) return;
+      stopListening();
+      window.library.getSettings().then(fillSettings);
+    });
   }
 
   function fillPeek(state) {
     if (peek.listening) return;
     peek.keys.textContent = prettyAccelerator(state.peekShortcut);
     peek.row.classList.toggle('failed', state.peekOk === false);
+    const alone = state.peekShortcut && !state.peekShortcut.includes('+');
     peek.hint.textContent = state.peekOk === false
-      ? 'Another app already owns that combination. Pick a different one.'
-      : 'Hold these keys anywhere in Windows to hide every note; let go and they come back.';
+      ? 'Another app already owns that key. Pick a different one.'
+      : `${HOW_IT_WORKS}${alone ? ` Other apps won’t receive ${state.peekShortcut} while Sticky Notes runs.` : ''}`;
   }
 
   function fillSettings(state) {
@@ -221,6 +235,7 @@
     opacityValue.textContent = `${toPercent(state.opacity)}%`;
     newPinned.checked = !!state.newNotesPinned;
     autostart.checked = !!state.autoStart;
+    autoShow.value = String(state.autoShowAfter);
     fillPeek(state);
 
     swatches.replaceChildren(...state.palette.map((colour) => {
@@ -239,6 +254,8 @@
 
   function showSettings(show) {
     const open = show === undefined ? panel.hidden : show;
+    // Leaving mid-recording must hand the shortcut back, or it stays dead.
+    if (!open && peek.listening) stopListening();
     panel.hidden = !open;
     list.hidden = open || list.children.length === 0;
     empty.hidden = open || list.children.length > 0;
@@ -263,6 +280,9 @@
   });
   autostart.addEventListener('change', () => {
     window.library.setSettings({ autoStart: autostart.checked }).then(fillSettings);
+  });
+  autoShow.addEventListener('change', () => {
+    window.library.setSettings({ autoShowAfter: Number(autoShow.value) }).then(fillSettings);
   });
 
   // --------------------------------------------------------------- actions

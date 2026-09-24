@@ -39,8 +39,10 @@ No account, no sync, no subscription. Your notes are one JSON file on your disk.
   the source with that word already selected.
 - **Formatting toolbar** — select text while editing and a small toolbar
   appears: bold, italic, strikethrough, code, link, heading, checklist.
-- **Peek** — hold a global hotkey to hide every note at once, release to bring
-  them back. Rebindable.
+- **Hide notes** — press `F1` to hide every note and reach the app behind them;
+  press again to bring them back, or they return on their own once you stop
+  using the mouse and keyboard. Hold the key instead to hide them only while
+  it is held. Rebindable.
 - **All Notes** — every note in one list, open or closed. Reopen, close or
   delete from there.
 - **Adjustable transparency** — let the desktop show through as much as you like.
@@ -89,7 +91,8 @@ Right-click a note's title bar for duplicate, delete, and All Notes.
 
 **The tray icon** (notification area, by the clock) opens **All Notes**, which
 lists every note whether its window is open or not. Right-click it for a quick
-menu including *Start with Windows*.
+menu including *Start with Windows*. While notes are hidden the icon fades,
+and clicking it brings them back.
 
 > [!TIP]
 > On Windows 11 a new tray icon starts hidden under the `^` chevron. Drag it
@@ -97,15 +100,17 @@ menu including *Start with Windows*.
 
 **Settings** live behind the gear in the All Notes title bar: note
 transparency, default colour for new notes, whether new notes start pinned,
-starting with Windows, and the peek shortcut. Click **Change** next to the
-shortcut and press the combination you want — if another app already owns it,
-it says so instead of failing quietly.
+starting with Windows, the hide shortcut, and how long hidden notes wait
+before coming back. Click **Change** next to the shortcut and press the key or
+combination you want — if another app already owns it, it says so instead of
+failing quietly. An F-key can be used on its own; while Sticky Notes runs,
+other apps no longer receive it.
 
 ### Keyboard
 
 | Shortcut | Action |
 | --- | --- |
-| `Ctrl+Alt+H` | **Peek** — hold to hide every note, release to restore (rebindable) |
+| `F1` | **Hide notes** — press to hide or show every note; hold to hide only while held (rebindable) |
 | `Ctrl+N` | New note |
 | `Ctrl+E` | Toggle rendered / source |
 | `Ctrl+Enter` | Done editing — saves and shows the rendered view |
@@ -140,14 +145,22 @@ a bad edit cannot cost you your notes.
 git clone https://github.com/jcconsult/sticky-notes.git
 cd sticky-notes
 npm install
-npm start
+npm run dev
 ```
+
+`npm run dev` runs your checkout as **Sticky Notes (dev)** — a separate app
+with a purple tray icon that runs beside an installed copy, so there is nothing
+to quit first. It keeps its own data in `%APPDATA%\sticky-notes-dev`, starting
+from a copy of your real notes on first run; your real notes file is never
+written. `npm run dev:reset` discards that copy (quit the dev app first).
 
 | Script | What it does |
 | --- | --- |
-| `npm start` | Run the app from source |
+| `npm run dev` | Run the checkout beside the installed app, on a copy of your notes |
+| `npm run dev:reset` | Throw the dev copy away; the next `dev` run copies your notes again |
+| `npm start` | Run the checkout as the real app, on your real notes (quit the installed one first) |
 | `npm run check` | Parse every source file |
-| `npm test` | Run the formatting-engine tests |
+| `npm test` | Run the formatting-engine and hide-shortcut tests |
 | `npm run pack:dir` | Package to `dist/win-unpacked` without an installer |
 | `npm run dist` | Build the installer into `dist/` |
 
@@ -156,6 +169,7 @@ npm start
 ```
 src/main/main.js          windows, tray, settings — all OS-facing behaviour
 src/main/store.js         the JSON file, debounced and written atomically
+src/main/hide.js          the hide shortcut: tap, hold and idle return
 src/preload/              the two IPC bridges (a note, and All Notes)
 src/renderer/note.js      one note window
 src/renderer/markdown.js  markdown-it plus the checkbox/source round-trip
@@ -179,9 +193,17 @@ Electron. `markdown-it` is the only runtime dependency, vendored into
 - **Formatting edits** go through `document.execCommand('insertText')`, which
   is deprecated but is the only way to change a textarea's value while keeping
   Chromium's native undo stack. `setRangeText()` silently destroys it.
-- **Peek** rides on the fact that Windows repeats a held hotkey: Electron's
-  `globalShortcut` has no key-up event, so a gap in the repeats stands in for
-  the release.
+- **Hide notes** rides on the fact that Windows repeats a held hotkey:
+  Electron's `globalShortcut` has no key-up event, so repeats arriving means
+  the key is held, and a gap in them stands in for the release. A press with
+  no repeats is a tap. The logic lives in `src/main/hide.js`, free of Electron,
+  so `test/hide.test.js` plays out taps, holds and idle time on a fake clock.
+- **Hidden notes come back** only after the machine has been idle
+  (`powerMonitor.getSystemIdleTime()`), never on a plain timer, so they cannot
+  reappear under a click in the app behind them.
+- **Toggle keys can't be the shortcut.** Registering Caps Lock, Num Lock or
+  Scroll Lock as a hotkey still flips the lock, so they are not offered; F12 is
+  reserved by Windows for debuggers.
 
 ### Security
 
