@@ -2,11 +2,14 @@ const fs = require('fs');
 const path = require('path');
 const {
   app, BrowserWindow, ipcMain, Menu, Tray, nativeImage, nativeTheme, screen, shell, dialog,
-  globalShortcut, powerMonitor,
+  globalShortcut, powerMonitor, net,
 } = require('electron');
 
 const store = require('./store');
 const { createHider } = require('./hide');
+const connections = require('./connections');
+const widgets = require('./widgets');
+const { createRuntime } = require('./widgets/runtime');
 const { PALETTE, THEMES, DEFAULT_COLOR, colorOf } = require('../shared/palette');
 
 const DEFAULT_SETTINGS = {
@@ -48,6 +51,11 @@ function useDevData() {
 
 const NOTE_MIN = { width: 240, height: 180 };
 const NOTE_DEFAULT = { width: 340, height: 380 };
+const WIDGET_DEFAULT = { width: 320, height: 440 };
+
+// A calendar feed is text; anything bigger than this is not one worth reading.
+const FEED_MAX_BYTES = 5 * 1024 * 1024;
+const FEED_TIMEOUT_MS = 20 * 1000;
 const LIBRARY_DEFAULT = { width: 340, height: 520 };
 
 const WELCOME = `# Welcome
@@ -207,12 +215,18 @@ function clamp(text, max) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
+// A widget's first line changes every refresh; it is known by its fixed name.
 function noteTitle(note) {
+  if (note.widget) {
+    const def = widgets.definition(note.widget.type);
+    return def ? def.name : 'Widget';
+  }
   const [first] = plainLines(note.markdown);
   return first ? clamp(first, 60) : 'Empty note';
 }
 
 function noteSnippet(note) {
+  if (note.widget) return clamp(runtime.summary(note.id) || '', 70);
   return clamp(plainLines(note.markdown).slice(1).join(' '), 70);
 }
 
@@ -221,6 +235,7 @@ function summarise() {
     id: note.id,
     title: noteTitle(note),
     snippet: noteSnippet(note),
+    widget: !!note.widget,
     dot: colorOf(note.color).dot,
     visible: note.visible !== false,
     createdAt: note.createdAt,
@@ -257,8 +272,12 @@ function createNoteWindow(note) {
     return existing;
   }
 
+  // Widgets share everything a note window has — the windows map, so F1,
+  // pinning, transparency and theme all apply — but load their own page and a
+  // narrower preload with no way to write their content.
+  const isWidget = !!note.widget;
   const win = new BrowserWindow({
-    ...(note.bounds || defaultBounds(NOTE_DEFAULT)),
+    ...(note.bounds || defaultBounds(isWidget ? WIDGET_DEFAULT : NOTE_DEFAULT)),
     minWidth: NOTE_MIN.width,
     minHeight: NOTE_MIN.height,
     frame: false,
@@ -266,7 +285,7 @@ function createNoteWindow(note) {
     skipTaskbar: true, // eight notes should not mean eight taskbar buttons
     backgroundColor: theme().bg,
     webPreferences: {
-      preload: path.join(__dirname, '../preload/preload.js'),
+      preload: path.join(__dirname, `../preload/${isWidget ? 'preload-widget' : 'preload'}.js`),
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -274,7 +293,8 @@ function createNoteWindow(note) {
   });
 
   windows.set(note.id, win);
-  win.loadFile(path.join(__dirname, '../renderer/note.html'), { query: { id: note.id } });
+  win.loadFile(path.join(__dirname, `../renderer/${isWidget ? 'widget' : 'note'}.html`), { query: { id: note.id } });
+  if (isWidget) runtime.start(note.id);
 
   win.once('ready-to-show', () => {
     applyPin(win, note.pinned);
@@ -304,6 +324,7 @@ function createNoteWindow(note) {
 
   win.on('closed', () => {
     if (windows.get(note.id) === win) windows.delete(note.id);
+    runtime.stop(note.id);
   });
 
   if (!app.isPackaged) {
@@ -362,6 +383,37 @@ function hideNote(id) {
   notifyChanged();
 }
 
+function newWidget(type) {
+  const def = widgets.definition(type);
+  if (!def) return null;
+  hider.reset();
+  const note = store.create({
+    widget: { type, settings: widgets.defaults(type) },
+    color: def.color,
+    pinned: settings().newNotesPinned,
+    mode: 'view', // a widget has no source to open in
+  });
+  createNoteWindow(note);
+  notifyChanged();
+  return note;
+}
+
+// Copy to note: the widget's text as an ordinary note, frozen. Its sticky://
+// links mean nothing outside the widget, so they become plain words.
+function copyWidgetToNote(id) {
+  const source = store.get(id);
+  const markdown = runtime.markdown(id)
+    .replace(/\[((?:\\.|[^\]\\])*)\]\(sticky:\/\/[^)]*\)/g, '$1');
+  const note = store.create({
+    markdown: `# ${noteTitle(source)} · ${new Date().toLocaleDateString()}\n\n${markdown}`,
+    color: source.color,
+    pinned: settings().newNotesPinned,
+    mode: 'view',
+  });
+  createNoteWindow(note);
+  notifyChanged();
+}
+
 function newNote(nearId) {
   hider.reset();
   const near = nearId ? store.get(nearId) : null;
@@ -380,22 +432,25 @@ function newNote(nearId) {
 function deleteNote(id) {
   const win = windows.get(id);
   windows.delete(id);
+  runtime.stop(id);
   if (win && !win.isDestroyed()) win.destroy();
   store.remove(id);
   notifyChanged();
 }
 
-// Empty notes go without ceremony; anything with text asks first.
+// Empty notes go without ceremony; anything with text asks first. A widget
+// has no text of its own but does have settings, so it always asks.
 async function confirmDelete(parent, id) {
   const note = store.get(id);
   if (!note) return;
-  if ((note.markdown || '').trim()) {
+  if ((note.markdown || '').trim() || note.widget) {
+    const kind = note.widget ? 'widget' : 'note';
     const { response } = await dialog.showMessageBox(parent, {
       type: 'warning',
       buttons: ['Delete', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
-      title: 'Delete note',
+      title: `Delete ${kind}`,
       message: `Delete “${noteTitle(note)}”?`,
       detail: 'This cannot be undone.',
     });
@@ -547,6 +602,10 @@ function refreshTray() {
     { label: 'All notes…', click: showLibrary },
     { label: 'New note', click: () => newNote() },
     {
+      label: 'New widget',
+      submenu: widgets.types().map(({ type, name }) => ({ label: name, click: () => newWidget(type) })),
+    },
+    {
       label: `${hidden ? 'Show' : 'Hide'} notes`,
       // Shown beside the item only; the global shortcut does the real work.
       accelerator: settings().peekShortcut || undefined,
@@ -619,6 +678,47 @@ function ownerId(event) {
 }
 
 // ---------------------------------------------------------------------------
+// Widgets
+
+// net.fetch goes through Chromium's network stack, so a system or corporate
+// proxy is honoured exactly as it is in a browser.
+async function fetchText(url) {
+  const response = await net.fetch(url, {
+    signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
+    headers: { accept: 'text/calendar, text/plain;q=0.9, */*;q=0.1' },
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (Number(response.headers.get('content-length') || 0) > FEED_MAX_BYTES) throw new Error('too large');
+  const text = await response.text();
+  if (text.length > FEED_MAX_BYTES) throw new Error('too large');
+  return text;
+}
+
+const runtime = createRuntime({
+  getNote: (id) => store.get(id),
+  send: (id, payload) => {
+    const win = windows.get(id);
+    if (win && !win.isDestroyed()) win.webContents.send('widget:update', payload);
+  },
+  ctx: { calendars: () => connections.calendarUrls(), fetchText },
+  onSummary: () => notifyChanged(),
+});
+
+// A command behind a widget link, as opposed to a URL.
+function runCommand(command) {
+  if (command === 'connections') showConnections();
+}
+
+function showConnections() {
+  showLibrary();
+  if (library && !library.isDestroyed()) {
+    const send = () => library.webContents.send('library:showConnections');
+    if (library.webContents.isLoading()) library.webContents.once('did-finish-load', send);
+    else send();
+  }
+}
+
+// ---------------------------------------------------------------------------
 // IPC — note windows
 
 ipcMain.handle('note:get', (event) => {
@@ -631,8 +731,10 @@ ipcMain.handle('note:get', (event) => {
 ipcMain.handle('note:update', (event, patch) => {
   const id = ownerId(event);
   if (!id) return;
+  // A widget's text is written by the app; its window may only change colour.
+  const keys = store.get(id)?.widget ? ['color'] : ['markdown', 'color', 'mode'];
   const allowed = {};
-  for (const key of ['markdown', 'color', 'mode']) {
+  for (const key of keys) {
     if (key in patch) allowed[key] = patch[key];
   }
   store.update(id, allowed);
@@ -681,6 +783,74 @@ ipcMain.handle('note:menu', (event) => {
 ipcMain.handle('open-external', (_event, url) => openExternal(url));
 
 // ---------------------------------------------------------------------------
+// IPC — widget windows
+
+function widgetOf(event) {
+  const id = ownerId(event);
+  const note = id ? store.get(id) : null;
+  return note && note.widget ? { id, note, def: widgets.definition(note.widget.type) } : null;
+}
+
+ipcMain.handle('widget:get', (event) => {
+  const w = widgetOf(event);
+  if (!w || !w.def) return null;
+  return {
+    name: w.def.name,
+    color: w.note.color,
+    pinned: w.note.pinned,
+    schema: widgets.schema(w.def.type),
+    settings: widgets.clean(w.def.type, w.note.widget.settings),
+    update: runtime.payload(w.id),
+    theme: themeName(),
+    themes: THEMES,
+    palette: PALETTE,
+  };
+});
+
+// Settings come back through the same rules as defaults, so a widget only
+// ever sees values its schema allows.
+ipcMain.handle('widget:setSettings', (event, patch) => {
+  const w = widgetOf(event);
+  if (!w || !w.def) return null;
+  const next = widgets.clean(w.def.type, { ...w.note.widget.settings, ...patch });
+  store.update(w.id, { widget: { ...w.note.widget, settings: next } });
+  runtime.render(w.id);
+  return next;
+});
+
+ipcMain.handle('widget:refresh', (event) => {
+  const w = widgetOf(event);
+  if (w) runtime.refresh(w.id);
+});
+
+// The renderer sends only an id from the last render; the URL or command
+// behind it never leaves the main process, and web links still go through
+// the same allowlist as links in notes.
+ipcMain.handle('widget:action', (event, actionId) => {
+  const w = widgetOf(event);
+  const target = w && typeof actionId === 'string' ? runtime.action(w.id, actionId) : null;
+  if (!target) return;
+  if (target.url) openExternal(target.url);
+  else if (target.command) runCommand(target.command);
+});
+
+ipcMain.handle('widget:menu', (event) => {
+  const w = widgetOf(event);
+  const win = w && windows.get(w.id);
+  if (!win || win.isDestroyed()) return;
+  Menu.buildFromTemplate([
+    { label: 'Widget settings…', click: () => win.webContents.send('widget:showSettings') },
+    { label: 'Refresh now', click: () => runtime.refresh(w.id) },
+    { label: 'Copy to note', click: () => copyWidgetToNote(w.id) },
+    { type: 'separator' },
+    { label: 'All notes…', click: showLibrary },
+    { label: 'Close widget (keeps it in All Notes)', click: () => hideNote(w.id) },
+    { type: 'separator' },
+    { label: 'Delete widget…', click: () => confirmDelete(win, w.id) },
+  ]).popup({ window: win });
+});
+
+// ---------------------------------------------------------------------------
 // IPC — All Notes window
 
 ipcMain.handle('library:list', () => ({ notes: summarise(), theme: theme() }));
@@ -697,6 +867,30 @@ ipcMain.handle('library:toggleVisible', (_event, id) => {
 ipcMain.handle('library:delete', (_event, id) => confirmDelete(library, id));
 
 ipcMain.handle('library:new', () => newNote());
+
+// One entry point for widgets: a menu of the types there are.
+ipcMain.handle('library:newWidget', () => {
+  if (!library || library.isDestroyed()) return;
+  Menu.buildFromTemplate(widgets.types().map(({ type, name }) => ({
+    label: name,
+    click: () => newWidget(type),
+  }))).popup({ window: library });
+});
+
+// Calendar links: the renderer sees labels and hosts, never the links.
+ipcMain.handle('connections:list', () => connections.list());
+
+ipcMain.handle('connections:add', (_event, url) => {
+  const result = connections.addCalendar(url);
+  if (result.ok) runtime.refreshAll();
+  return { ...result, calendars: connections.list() };
+});
+
+ipcMain.handle('connections:remove', (_event, id) => {
+  connections.removeCalendar(id);
+  runtime.refreshAll();
+  return connections.list();
+});
 
 let peekOk = true;
 
@@ -799,6 +993,11 @@ if (!app.requestSingleInstanceLock()) {
       if (!notes.some((note) => note.visible !== false)) showLibrary();
     }
     notifyChanged();
+
+    // Hours may have passed asleep: widgets fetch again rather than show
+    // yesterday's agenda until the next scheduled refresh.
+    powerMonitor.on('resume', () => runtime.refreshAll());
+    powerMonitor.on('unlock-screen', () => runtime.refreshAll());
 
     nativeTheme.on('updated', () => {
       const name = themeName();

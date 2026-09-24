@@ -84,6 +84,21 @@
       </p>
     </div>
 
+    <div class="setting" id="calendars-setting">
+      <div class="setting-head"><label for="calendar-url">Calendars</label></div>
+      <ul id="calendars" class="conns"></ul>
+      <div class="conn-add">
+        <input type="url" id="calendar-url" class="text-input" spellcheck="false"
+               placeholder="Paste a calendar link (https:// or webcal://)" />
+        <button id="calendar-add" class="ghost">Add</button>
+      </div>
+      <p class="hint" id="calendar-hint">
+        For the Agenda widget. Google: Settings → your calendar → Integrate calendar →
+        Secret address in iCal format. Outlook: Settings → Calendar → Shared calendars →
+        Publish a calendar, with “Can view all details”. Links are stored encrypted on this PC.
+      </p>
+    </div>
+
     <div class="setting">
       <div class="setting-head"><label>Inside a note</label></div>
       <dl class="keys">
@@ -98,10 +113,16 @@
   </section>
 
   <footer class="foot">
-    <button id="btn-new" class="new">
-      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>
-      New note
-    </button>
+    <div class="foot-buttons">
+      <button id="btn-new" class="new">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>
+        New note
+      </button>
+      <button id="btn-new-widget" class="new">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="2.5" width="4.5" height="4.5" rx="1.2"/><rect x="9" y="2.5" width="4.5" height="4.5" rx="1.2"/><rect x="2.5" y="9" width="4.5" height="4.5" rx="1.2"/><path d="M11.25 9v4.5M9 11.25h4.5"/></svg>
+        New widget
+      </button>
+    </div>
     <span id="count" class="count"></span>
   </footer>
 

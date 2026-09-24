@@ -62,16 +62,27 @@
     .use(taskLists)
     .use(sourceLines);
 
+  // Widgets get their own instance without linkify. Their text comes from
+  // other people (calendar invites), and only the widget formatter may make
+  // links — a bare URL in an event title must stay text.
+  const widgetMd = window.markdownit({ html: false, linkify: false, breaks: true });
+
   // Every link leaves the app; the main process decides what is safe to open.
-  const defaultLink = md.renderer.rules.link_open ||
-    ((tokens, idx, opts, _env, self) => self.renderToken(tokens, idx, opts));
-  md.renderer.rules.link_open = (tokens, idx, opts, env, self) => {
-    tokens[idx].attrSet('rel', 'noopener noreferrer');
-    return defaultLink(tokens, idx, opts, env, self);
-  };
+  for (const instance of [md, widgetMd]) {
+    const defaultLink = instance.renderer.rules.link_open ||
+      ((tokens, idx, opts, _env, self) => self.renderToken(tokens, idx, opts));
+    instance.renderer.rules.link_open = (tokens, idx, opts, env, self) => {
+      tokens[idx].attrSet('rel', 'noopener noreferrer');
+      return defaultLink(tokens, idx, opts, env, self);
+    };
+  }
 
   function render(markdown) {
     return md.render(normalise(markdown || ''));
+  }
+
+  function renderWidget(markdown) {
+    return widgetMd.render(normalise(markdown || ''));
   }
 
   // Line numbers from the parser only line up if newlines are normalised the
@@ -88,5 +99,5 @@
     return lines.join('\n');
   }
 
-  window.NoteMarkdown = { render, toggleLine, normalise };
+  window.NoteMarkdown = { render, renderWidget, toggleLine, normalise };
 })();

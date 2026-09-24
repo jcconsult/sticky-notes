@@ -43,8 +43,16 @@
     // textContent, never innerHTML: note text is user content and must never
     // be parsed as markup here.
     open.querySelector('.name').textContent = note.title;
-    open.querySelector('.meta').textContent =
-      `${when(note.createdAt)}${note.snippet ? ` · ${note.snippet}` : ''}`;
+    const meta = open.querySelector('.meta');
+    if (note.widget) {
+      // A widget's meta line is its live summary, not a creation date.
+      const live = document.createElement('span');
+      live.className = 'live';
+      live.textContent = 'Live';
+      meta.append(live, document.createTextNode(note.snippet || 'Widget'));
+    } else {
+      meta.textContent = `${when(note.createdAt)}${note.snippet ? ` · ${note.snippet}` : ''}`;
+    }
     open.title = 'Open this note';
     open.addEventListener('click', () => window.library.open(note.id));
 
@@ -252,6 +260,65 @@
     }));
   }
 
+  // ----------------------------------------------------------- calendars
+
+  const calendars = document.getElementById('calendars');
+  const calendarUrl = document.getElementById('calendar-url');
+  const calendarAdd = document.getElementById('calendar-add');
+  const calendarHint = document.getElementById('calendar-hint');
+  const CALENDAR_HINT = calendarHint.textContent;
+
+  function hint(text, error = false) {
+    calendarHint.textContent = text;
+    calendarHint.classList.toggle('error', error);
+  }
+
+  // Labels and hosts only: the links themselves never reach this window.
+  function fillCalendars(list) {
+    calendars.replaceChildren(...list.map((calendar) => {
+      const li = document.createElement('li');
+      li.className = 'conn';
+      const name = document.createElement('span');
+      name.className = 'conn-name';
+      name.textContent = calendar.label;
+      const host = document.createElement('small');
+      host.textContent = calendar.host;
+      name.append(host);
+      const remove = document.createElement('button');
+      remove.className = 'ghost';
+      remove.textContent = 'Remove';
+      remove.addEventListener('click', () => window.library.removeCalendar(calendar.id).then(fillCalendars));
+      li.append(name, remove);
+      return li;
+    }));
+  }
+
+  function addCalendar() {
+    const url = calendarUrl.value.trim();
+    if (!url) return;
+    window.library.addCalendar(url).then((result) => {
+      fillCalendars(result.calendars);
+      if (result.ok) {
+        calendarUrl.value = '';
+        hint('Added. Agenda widgets refresh now.');
+      } else {
+        hint(result.error, true);
+      }
+    });
+  }
+
+  calendarAdd.addEventListener('click', addCalendar);
+  calendarUrl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') addCalendar();
+  });
+  calendarUrl.addEventListener('input', () => hint(CALENDAR_HINT));
+
+  window.library.onShowConnections(() => {
+    showSettings(true);
+    document.getElementById('calendars-setting').scrollIntoView({ block: 'start' });
+    calendarUrl.focus();
+  });
+
   function showSettings(show) {
     const open = show === undefined ? panel.hidden : show;
     // Leaving mid-recording must hand the shortcut back, or it stays dead.
@@ -263,7 +330,10 @@
     gear.setAttribute('aria-pressed', String(open));
     gear.title = open ? 'Back to notes' : 'Settings';
     document.getElementById('title').textContent = open ? 'Settings' : 'Sticky Notes';
-    if (open) window.library.getSettings().then(fillSettings);
+    if (open) {
+      window.library.getSettings().then(fillSettings);
+      window.library.calendars().then(fillCalendars);
+    }
   }
 
   setupPeek();
@@ -288,6 +358,7 @@
   // --------------------------------------------------------------- actions
 
   document.getElementById('btn-new').addEventListener('click', () => window.library.create());
+  document.getElementById('btn-new-widget').addEventListener('click', () => window.library.newWidget());
   document.getElementById('btn-min').addEventListener('click', () => window.library.minimise());
   document.getElementById('btn-close').addEventListener('click', () => window.library.close());
   document.addEventListener('keydown', (e) => {

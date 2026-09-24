@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none';" />
+  <title>Widget</title>
+  <link rel="stylesheet" href="note.css" />
+  <link rel="stylesheet" href="widget.css" />
+</head>
+<body class="widget">
+  <header id="bar" class="bar">
+    <div class="grip"><span id="label" class="label"></span></div>
+    <div class="actions">
+      <button id="btn-new" class="btn" title="New note (Ctrl+N)" aria-label="New note">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>
+      </button>
+      <button id="btn-color" class="btn" title="Colour" aria-label="Colour" aria-expanded="false">
+        <span class="swatch" id="swatch"></span>
+      </button>
+      <button id="btn-pin" class="btn" title="Keep on top" aria-label="Keep on top" aria-pressed="true">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2h4l-.6 3.4 2.1 2.1H4.5l2.1-2.1L6 2Z"/><path d="M8 7.5V14"/></svg>
+      </button>
+      <button id="btn-settings" class="btn" title="Widget settings" aria-label="Widget settings" aria-pressed="false">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.1"/><path d="M8 1.6v1.7M8 12.7v1.7M14.4 8h-1.7M3.3 8H1.6M12.5 3.5l-1.2 1.2M4.7 11.3l-1.2 1.2M12.5 12.5l-1.2-1.2M4.7 4.7 3.5 3.5"/></svg>
+      </button>
+      <button id="btn-close" class="btn btn-close" title="Close (stays in All Notes)" aria-label="Close">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.6 4.6l6.8 6.8M11.4 4.6l-6.8 6.8"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <div id="palette" class="palette" hidden></div>
+
+  <main class="body">
+    <article id="preview" class="preview markdown"></article>
+    <section id="settings" class="widget-settings" hidden></section>
+  </main>
+
+  <button id="foot" class="widget-foot" title="Refresh now">
+    <span class="dot"></span>
+    <span class="text" id="foot-text">Loading…</span>
+    <span class="src" id="foot-src"></span>
+  </button>
+
+  <script src="../vendor/markdown-it.min.js"></script>
+  <script src="markdown.js"></script>
+  <script src="widget.js"></script>
+</body>
+</html>
