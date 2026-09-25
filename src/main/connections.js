@@ -30,32 +30,11 @@ function decrypt(secret) {
   return JSON.parse(safeStorage.decryptString(Buffer.from(secret, 'base64')));
 }
 
-// The first version stored calendar links only, as { calendars: [...] } with
-// the bare URL encrypted. Carried over once, into the general shape.
-function migrate(parsed) {
-  const connections = [];
-  for (const c of parsed.calendars || []) {
-    try {
-      const url = safeStorage.decryptString(Buffer.from(c.secret, 'base64'));
-      connections.push({
-        id: c.id, type: 'ics', label: c.label, detail: c.host,
-        secret: encrypt({ url }), public: {}, health: null,
-      });
-    } catch { /* saved on another machine: cannot carry it over */ }
-  }
-  return { version: 2, connections };
-}
-
 function load() {
   if (data) return data;
   try {
     const parsed = JSON.parse(fs.readFileSync(connectionsPath(), 'utf8').replace(/^﻿/, ''));
-    if (Array.isArray(parsed.connections)) {
-      data = { version: 2, connections: parsed.connections };
-    } else {
-      data = migrate(parsed);
-      save();
-    }
+    data = { version: 2, connections: Array.isArray(parsed.connections) ? parsed.connections : [] };
   } catch {
     data = { version: 2, connections: [] };
   }
