@@ -57,6 +57,9 @@
 .checklist small:empty { display: none; }
 .checklist .broken small { color: #e0455f; }
 
+/* A checklist with nothing to list yet: loading, or couldn't load. */
+.field-note { margin: 0; color: var(--muted); font-size: 12px; font-style: italic; }
+
 button.link {
   padding: 2px 0;
   border: 0;

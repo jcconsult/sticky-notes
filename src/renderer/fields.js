@@ -52,9 +52,7 @@
   }
 
   // Ticked = shown in this widget. The value is the list of unticked ids.
-  function connections(field, excluded, onChange, onManage) {
-    const row = h('div', 'field connections');
-    row.append(h('span', 'field-label', field.label));
+  function checkboxes(field, excluded, onChange) {
     const list = h('ul', 'checklist');
     for (const option of field.options) {
       const li = h('li', option.health && !option.health.ok ? 'broken' : '');
@@ -75,9 +73,33 @@
       li.append(label);
       list.append(li);
     }
+    return list;
+  }
+
+  function connections(field, excluded, onChange, onManage) {
+    const row = h('div', 'field connections');
     const manage = h('button', 'link', `Manage ${field.noun}s…`);
     manage.addEventListener('click', () => onManage(field.of));
-    row.append(list, manage);
+    row.append(h('span', 'field-label', field.label), checkboxes(field, excluded, onChange), manage);
+    return row;
+  }
+
+  // Options from the widget's own data. Before its first fetch there are none
+  // yet; after a failed one, or with nothing connected to fetch from, there
+  // are none to be had — say which.
+  function checklist(field, excluded, onChange) {
+    const row = h('div', 'field connections');
+    row.append(h('span', 'field-label', field.label));
+    if (!field.options) {
+      let note = `Loading your ${field.noun}s…`;
+      if (field.needs) note = `Your ${field.noun}s appear here once ${field.needs} is connected, in All Notes → Settings → Connections.`;
+      else if (field.failed) note = `Couldn’t load your ${field.noun}s — the widget says why.`;
+      row.append(h('p', 'field-note', note));
+    } else if (!field.options.length) {
+      row.append(h('p', 'field-note', `No ${field.noun}s to choose from.`));
+    } else {
+      row.append(checkboxes(field, excluded, onChange));
+    }
     return row;
   }
 
@@ -91,6 +113,7 @@
       if (field.type === 'toggle') return toggle(field, values[field.key], onChange);
       if (field.type === 'choice') return choice(field, values[field.key], onChange);
       if (field.type === 'connections') return connections(field, values[field.key] || [], onChange, onManage);
+      if (field.type === 'checklist') return checklist(field, values[field.key] || [], onChange);
       return h('div');
     });
   }
@@ -187,7 +210,9 @@
 
     if (type.help.length) {
       const help = h('details', 'help');
-      help.append(h('summary', null, `Where do I find the ${(type.fields[0].label || 'details').toLowerCase()}?`));
+      // "Calendar link" → "calendar link", but "API key" stays "API key".
+      const thing = (type.fields[0].label || 'details').replace(/^[A-Z](?![A-Z])/, (c) => c.toLowerCase());
+      help.append(h('summary', null, `Where do I find the ${thing}?`));
       const steps = h('dl');
       for (const step of type.help) steps.append(h('dt', null, step.label), h('dd', null, step.text));
       help.append(steps);

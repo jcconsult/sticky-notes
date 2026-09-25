@@ -97,7 +97,18 @@ function view(events, settings, now, locale) {
     });
   }
 
-  return { sections, summary: summary(events, now, fmt) };
+  return { sections, summary: summary(events, now, fmt), glance: glance(events, now, fmt) };
+}
+
+// The tile: the time of what is on or next today, and what it is.
+function glance(events, now, fmt) {
+  const timed = events.filter((e) => !e.allDay).sort(byTime);
+  const current = timed.find((e) => e.start <= now && now < e.end);
+  if (current) return { value: fmt.time.format(current.start), caption: `${current.title} · on now`, live: true };
+  const tonight = addDays(startOfDay(now), 1);
+  const next = timed.find((e) => e.start > now && e.start < tonight);
+  if (next) return { value: fmt.time.format(next.start), caption: next.title };
+  return { value: 'Free', caption: 'Nothing else today' };
 }
 
 // One line for All Notes: what is on, or what is next today.

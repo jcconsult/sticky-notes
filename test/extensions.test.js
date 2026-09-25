@@ -35,7 +35,7 @@ function check(label, got, want) {
 
 // --- the contract ----------------------------------------------------------
 
-const FIELD_TYPES = ['toggle', 'choice', 'connections'];
+const FIELD_TYPES = ['toggle', 'choice', 'connections', 'checklist'];
 const INPUT_TYPES = ['url', 'text'];
 const connectionTypes = new Set();
 const widgetTypes = new Set();
@@ -64,6 +64,9 @@ for (const ext of extensions) {
       w.settings.every((f) => f.key && f.label && FIELD_TYPES.includes(f.type)), true);
     check(`widget "${w.type}" choices have defaults among their options`,
       w.settings.filter((f) => f.type === 'choice').every((f) => f.options.some(([v]) => v === f.default)), true);
+    check(`widget "${w.type}" checklists take their options from data, and name them`,
+      w.settings.filter((f) => f.type === 'checklist').every((f) => typeof f.options === 'function' && !!f.noun), true);
+    check(`widget "${w.type}" icon is one of the app's own`, registry.ICONS.includes(w.icon), true);
   }
 }
 
@@ -84,6 +87,17 @@ check('clean drops bad values and unknown connections',
 check('schema fills a connections field with what exists',
   registry.schema('agenda', () => [{ id: 'k1', label: 'Work', detail: 'Google', health: null, secret: 'never' }])[0].options,
   [{ id: 'k1', label: 'Work', detail: 'Google', health: null }]);
+
+const teamsData = { teams: [{ id: 't1', name: 'Acme', key: 'ACM' }], issues: [] };
+const teamsField = (source) => registry.schema('linear-mine', () => [], source)[0];
+check('checklist: no data yet means loading', [teamsField().options, teamsField().failed], [null, false]);
+check('checklist: no data after a failure says so', teamsField({ data: null, failed: true }).failed, true);
+check('checklist: options come from the data', teamsField({ data: teamsData, failed: false }).options,
+  [{ id: 't1', label: 'Acme', detail: '' }]);
+check('checklist: excluded ids keep only their shape', registry.clean('linear-mine', { teams: ['t9', 4, 'x'.repeat(300)] }).teams, ['t9']);
+check('refetch: a team or backlog change only redraws',
+  registry.refetches('linear-mine', { teams: [], backlog: false }, { teams: ['t1'], backlog: true }), false);
+check('refetch: connections still refetch', registry.refetches('agenda', { calendars: [] }, { calendars: ['k1'] }), true);
 
 // --- the framework running the Agenda --------------------------------------
 
@@ -128,6 +142,8 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
   await settle();
   check('nothing connected: the framework says so', h.last().markdown.includes('No calendars connected yet.'), true);
   check('nothing connected: it offers to connect', h.last().markdown.includes('[Connect a calendar…](sticky://act/'), true);
+  check('nothing connected: blocked, not loading — the footer must not say "Loading…"',
+    [h.last().blocked, h.last().loading], [true, false]);
   h.runtime.dispose();
 
   h = harness({ connections: [{ id: 'k1', label: 'Work' }], excluded: ['k1'] });
@@ -143,6 +159,23 @@ const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
   check('connected: the source is named', h.last().sources, ['Work']);
   check('a working connection reports healthy', h.reports, { k1: null });
   h.runtime.dispose();
+
+  // A Linear widget added before any key: its team list says what to do,
+  // rather than "Loading…" for ever — there is nothing to load from.
+  const lone = { id: 'w2', widget: { type: 'linear-mine', settings: {} } };
+  const blocked = createRuntime({
+    getNote: () => lone,
+    send: () => {},
+    store: { list: () => [], values: () => [], report: () => {}, exists: () => false },
+    fetchText: async () => { throw new Error('should not fetch'); },
+    onSummary: () => {},
+  });
+  blocked.start('w2');
+  await settle();
+  const source = blocked.source('w2');
+  check('no key yet: the form knows it is blocked, not loading', source, { data: null, failed: false, blocked: true });
+  check('no key yet: the team list names what to connect', registry.schema('linear-mine', () => [], source)[0].needs, 'Linear');
+  blocked.dispose();
 
   h = harness({ connections: [{ id: 'k1', label: 'Work' }], fails: true });
   h.runtime.start('w1');

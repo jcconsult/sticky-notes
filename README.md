@@ -44,9 +44,10 @@ No account, no sync, no subscription. Your notes are one JSON file on your disk.
   it is held. Hidden notes can also come back on their own — after a spell
   without mouse or keyboard use, or after a set time even while you work — but
   never during a slideshow or full-screen app. Rebindable.
-- **Widgets** — notes the app writes for you, in the same style. The first is
-  **Agenda**: today and tomorrow from your Google and Outlook calendars, with
-  what's on now highlighted and a Join button for Teams, Meet and Zoom.
+- **Widgets** — notes the app writes for you, in the same style. **Agenda**:
+  today and tomorrow from your Google and Outlook calendars, with what's on now
+  highlighted and a Join button for Teams, Meet and Zoom. **My issues** and
+  **Triage** from Linear: what's on your plate, and what's waiting to be triaged.
 - **All Notes** — every note in one list, open or closed. Reopen, close or
   delete from there.
 - **Adjustable transparency** — let the desktop show through as much as you like.
@@ -185,6 +186,22 @@ account in `%APPDATA%\sticky-notes\connections.json`, never in `notes.json`,
 so a copied notes file carries no calendar access. Agenda refreshes every five
 minutes, when Windows wakes or unlocks, and at midnight.
 
+**My issues** and **Triage** need a Linear personal API key: in Linear,
+**Settings → Account → Security & access → Personal API keys → New key**.
+*Read* access is all they need. The key is checked when you add it, listed
+under your workspace's name, and stored encrypted like calendar links.
+
+- **My issues** — your open issues, grouped by status (or team, or priority)
+  under each team's own status names, with urgent and due-today ones marked,
+  due dates, and a link to any pull request. Optionally your backlog, and what
+  you finished today.
+- **Triage** — what's waiting in your teams' Triage, oldest first, with how
+  long each has waited; ones waiting too long are marked.
+
+Both tick which of your teams they show — a team you join later appears in
+every widget until you untick it — and refresh every five minutes. Each fetch
+is one or two requests, far inside Linear's limits.
+
 ### Where notes are stored
 
 `%APPDATA%\sticky-notes\notes.json` — a single plain JSON file holding the
@@ -215,7 +232,7 @@ written. `npm run dev:reset` discards that copy (quit the dev app first).
 | `npm run dev:reset` | Throw the dev copy away; the next `dev` run copies your notes again |
 | `npm start` | Run the checkout as the real app, on your real notes (quit the installed one first) |
 | `npm run check` | Parse every source file |
-| `npm test` | Run the formatting, hide-shortcut, widget, extension-contract and migration tests |
+| `npm test` | Run the formatting, hide-shortcut, widget, extension-contract, Linear and migration tests |
 | `npm run pack:dir` | Package to `dist/win-unpacked` without an installer |
 | `npm run dist` | Build the installer into `dist/` |
 
@@ -235,6 +252,7 @@ src/main/widgets/         the widget framework — knows no integration
 src/main/extensions/      integrations, one folder each
   index.js                  the list of built-in extensions
   calendar/                 calendar links (connection) + Agenda (widget)
+  linear/                   Linear API key (connection) + My issues, Triage
 src/preload/              the IPC bridges: a note, a widget, and All Notes
 src/renderer/note.js      one note window
 src/renderer/widget.js    one widget window: content, settings, footer
@@ -270,13 +288,24 @@ module.exports = {
     check: async (values, host) => ({ label, detail }),   // test it, name it
   }],
   widgets: [{                      // widget types → the + menu
-    type: 'agenda', name: 'Agenda', color: 'blue', uses: ['ics'], refreshMinutes: 5,
+    type: 'agenda', name: 'Agenda', color: 'blue', icon: 'calendar',
+    uses: ['ics'], refreshMinutes: 5,
     settings: [{ key: 'calendars', label: 'Calendars', type: 'connections', of: 'ics' }],
     fetch: async (settings, host) => data,
-    view: (data, settings, now) => ({ sections: [/* rows */], summary }),
+    view: (data, settings, now) => ({ sections: [/* rows */], summary, glance }),
   }],
 };
 ```
+
+Widget settings come in four field types: `toggle`, `choice`, `connections`
+(which accounts of a type to use) and `checklist` (which of a list the
+widget's own data supplies — Linear's teams — via `options(data)`). Both lists
+store what is *unticked*, so something new appears everywhere until someone
+unticks it. Only a change of connections fetches again; every other setting
+only redraws, so a widget fetches everything its settings can show and lets
+them filter — changes are instant. `icon` names one of the app's own
+icons (`registry.ICONS`), and `glance` — `{ value, caption, badge?, live? }` —
+is the one-look summary a widget will show as a tile in a group.
 
 The framework does the rest: it draws Settings → Connections from
 `connections`, draws each widget's settings from `settings` and validates every
@@ -284,7 +313,8 @@ value, shows *nothing connected* / *nothing selected* / *couldn't load* the
 same way for every widget, and formats `view`'s rows into Markdown. Extensions
 never build UI or write Markdown — that is what keeps every widget consistent.
 
-A widget touches the world only through `host`: `host.fetch(url)`,
+A widget touches the world only through `host`: `host.fetch(url, options?)`
+(with `{ method, headers, body }` for an API such as Linear's GraphQL),
 `host.connections(type)` (only the connections it has ticked, decrypted) and
 `host.report(id, error)` (a connection's health). Built-in widgets use exactly
 this contract, and `test/extensions.test.js` checks every extension against
@@ -329,7 +359,7 @@ Renderers run sandboxed with `contextIsolation` enabled and no Node access.
 `markdown-it` runs with `html: false`, so pasted content cannot inject markup.
 Links are opened by the main process, and only `http`, `https` and `mailto`.
 
-Widget text comes from other people (calendar invites), so it is escaped by
+Widget text comes from other people (calendar invites, issue titles), so it is escaped by
 the formatter and rendered without linkify: only the formatter makes links,
 and each is an opaque id whose target stays in the main process. Join buttons
 are made only for Teams, Meet and Zoom addresses. A widget window's preload

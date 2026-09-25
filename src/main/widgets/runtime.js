@@ -2,7 +2,8 @@
  * last good data, and hold each widget's action table.
  *
  * Each fetch gets a `host` — the only thing a widget ever touches:
- *   host.fetch(url)          text over the network, with a timeout and a cap
+ *   host.fetch(url, opts?)   text over the network, with a timeout and a cap;
+ *                            opts: { method, headers, body } for an API
  *   host.connections(type)   this widget's ticked connections, decrypted
  *   host.report(id, error)   how a connection fared, for Settings → Connections
  * Nothing from Electron, the file system or the secret store reaches a
@@ -25,10 +26,11 @@ const plural = (noun) => `${noun}s`;
  * @param {(id: string) => object|null} deps.getNote
  * @param {(id: string, payload: object) => void} deps.send   to the widget's window
  * @param {object} deps.store   connections: list(type), values(type), report(id, error), exists(id)
- * @param {(url: string) => Promise<string>} deps.fetchText
+ * @param {(url: string, options?: object) => Promise<string>} deps.fetchText
  * @param {() => void} deps.onSummary                         a one-line summary changed
+ * @param {(id: string) => void} [deps.onForm]                settings options changed
  */
-function createRuntime({ getNote, send, store, fetchText, onSummary }) {
+function createRuntime({ getNote, send, store, fetchText, onSummary, onForm = () => {} }) {
   const live = new Map();
 
   function parts(id) {
@@ -87,6 +89,7 @@ function createRuntime({ getNote, send, store, fetchText, onSummary }) {
     const { entry, def, settings } = p;
 
     let view = precondition(def, settings);
+    const blocked = !!view; // nothing to fetch from: no fetch is coming
     if (!view && entry.data) view = def.view(entry.data, settings, Date.now());
     else if (!view && entry.error) {
       const type = (def.uses || [])[0];
@@ -112,6 +115,7 @@ function createRuntime({ getNote, send, store, fetchText, onSummary }) {
     entry.payload = {
       markdown: rendered.markdown,
       loading: waiting,
+      blocked,
       refreshing: entry.busy,
       fetchedAt: entry.fetchedAt,
       error: entry.data ? entry.error : null, // with no data, the error is the content
@@ -126,6 +130,8 @@ function createRuntime({ getNote, send, store, fetchText, onSummary }) {
       entry.summary = summary;
       onSummary();
     }
+    // The tile a widget would show in a group; kept, not yet drawn anywhere.
+    entry.glance = view ? view.glance || null : null;
   }
 
   async function refresh(id) {
@@ -150,7 +156,16 @@ function createRuntime({ getNote, send, store, fetchText, onSummary }) {
       entry.busy = false;
       entry.day = today();
     }
-    if (live.has(id)) render(id);
+    if (!live.has(id)) return;
+    render(id);
+    // Settings whose options come from the data (a team checklist) have to
+    // redraw when those options change — including the first fetch, which
+    // either fills them or means they can't be filled.
+    const options = JSON.stringify(registry.dataOptions(def.type, entry.data));
+    if (options !== undefined && options !== entry.options) {
+      entry.options = options;
+      onForm(id);
+    }
   }
 
   function start(id) {
@@ -160,7 +175,7 @@ function createRuntime({ getNote, send, store, fetchText, onSummary }) {
     if (!def) return;
     const entry = {
       data: null, fetchedAt: null, error: null, warning: null, busy: false,
-      actions: {}, markdown: '', summary: null, day: null, payload: null,
+      actions: {}, markdown: '', summary: null, glance: null, options: null, day: null, payload: null,
       timer: setInterval(() => refresh(id), def.refreshMinutes * 60 * 1000),
     };
     live.set(id, entry);
@@ -222,6 +237,19 @@ function createRuntime({ getNote, send, store, fetchText, onSummary }) {
     render,
     action,
     summary: (id) => (live.get(id) || {}).summary || null,
+    glance: (id) => (live.get(id) || {}).glance || null,
+    // What a settings form needs to fill options that come from the data —
+    // and, when there is none, whether a fetch is coming (loading), went
+    // wrong (failed), or can't happen until something is connected (blocked).
+    source: (id) => {
+      const entry = live.get(id);
+      const p = parts(id);
+      return {
+        data: entry ? entry.data : null,
+        failed: !!(entry && !entry.data && entry.error),
+        blocked: !!(p && precondition(p.def, p.settings)),
+      };
+    },
     markdown: (id) => (live.get(id) || {}).markdown || '',
     payload: (id) => (live.get(id) || {}).payload || { loading: true },
   };

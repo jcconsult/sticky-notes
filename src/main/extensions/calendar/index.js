@@ -77,6 +77,7 @@ const agenda = {
   type: 'agenda',
   name: 'Agenda',
   color: 'blue',
+  icon: 'calendar',
   uses: ['ics'],
   refreshMinutes: 5,
   settings: [

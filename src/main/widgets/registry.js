@@ -11,8 +11,19 @@
  *   connections   which connections of type `of` this widget shows; stored as
  *                 the ids it *excludes*, so a connection added later appears
  *                 in every widget until someone unticks it
+ *   checklist     which of a list the widget's own data supplies (teams, say)
+ *                 it shows: `options(data) → [{ id, label }]`, `noun` for the
+ *                 wording. Stored as excluded ids, for the same reason.
+ *
+ * Changing which connections a widget uses fetches again; every other change
+ * only redraws, so a widget should fetch everything its settings can show.
+ *
+ * A widget type names an `icon` from ICONS — the app's own set, drawn by the
+ * renderer — so every tile looks like it belongs, whoever wrote the widget.
  */
 const extensions = require('../extensions');
+
+const ICONS = ['calendar', 'issues', 'inbox', 'bars'];
 
 const connectionTypes = new Map();
 const widgetTypes = new Map();
@@ -28,7 +39,7 @@ const connection = (type) => connectionTypes.get(type) || null;
 // ------------------------------------------------------------ descriptions
 
 function widgetList() {
-  return [...widgetTypes.values()].map(({ type, name, color }) => ({ type, name, color }));
+  return [...widgetTypes.values()].map(({ type, name, color, icon }) => ({ type, name, color, icon }));
 }
 
 // A connection type as Settings → Connections draws it. `secret` fields are
@@ -45,10 +56,27 @@ function connectionList() {
   }));
 }
 
+// A checklist's options from a widget's data; null until there is data.
+function checklistOptions(field, data) {
+  if (!data) return null;
+  const list = field.options(data);
+  return Array.isArray(list) ? list.map(({ id, label, detail }) => ({ id, label, detail: detail || '' })) : [];
+}
+
+// Every checklist's options, to notice when they change. Undefined for a
+// widget without checklists.
+function dataOptions(type, data) {
+  const def = widget(type);
+  const fields = def ? def.settings.filter((f) => f.type === 'checklist') : [];
+  if (!fields.length) return undefined;
+  return fields.map((f) => checklistOptions(f, data));
+}
+
 // A widget's settings form. A connections field carries its options — the
 // connections that exist right now, by label and health — because a static
-// schema can't know them.
-function schema(type, available) {
+// schema can't know them; a checklist carries what the widget last fetched,
+// or null with `failed` when there is nothing to offer yet.
+function schema(type, available, source = { data: null, failed: false, blocked: false }) {
   const def = widget(type);
   if (!def) return [];
   return def.settings.map((field) => {
@@ -60,6 +88,14 @@ function schema(type, available) {
       out.noun = kind ? kind.noun : field.of;
       out.options = available(field.of).map(({ id, label, detail, health }) => ({ id, label, detail, health }));
     }
+    if (field.type === 'checklist') {
+      out.noun = field.noun;
+      out.options = checklistOptions(field, source.data);
+      out.failed = !out.options && !!source.failed;
+      // Nothing to fetch from yet: name what to connect, not "Loading…".
+      const needs = (def.uses || []).map(connection).find(Boolean);
+      out.needs = !out.options && source.blocked && needs ? needs.name : null;
+    }
     return out;
   });
 }
@@ -67,7 +103,7 @@ function schema(type, available) {
 // --------------------------------------------------------------- settings
 
 function defaultFor(field) {
-  if (field.type === 'connections') return [];
+  if (field.type === 'connections' || field.type === 'checklist') return [];
   return field.default;
 }
 
@@ -90,8 +126,21 @@ function clean(type, settings, exists = () => true) {
     if (field.type === 'connections' && Array.isArray(value)) {
       result[field.key] = value.filter((id) => typeof id === 'string' && exists(id));
     }
+    // Checklist ids come from data the settings can't see, so only their
+    // shape is checked; one that no longer exists simply matches nothing.
+    if (field.type === 'checklist' && Array.isArray(value)) {
+      result[field.key] = value.filter((id) => typeof id === 'string' && id.length <= 200).slice(0, 500);
+    }
   }
   return result;
+}
+
+// Does going from `before` to `after` change what the widget fetches?
+function refetches(type, before, after) {
+  const def = widget(type);
+  if (!def) return false;
+  return def.settings.some((f) => f.type === 'connections'
+    && JSON.stringify(before[f.key]) !== JSON.stringify(after[f.key]));
 }
 
 // The connections of `type` a widget's settings leave ticked.
@@ -104,7 +153,7 @@ function excluded(type, widgetType, settings) {
 }
 
 module.exports = {
-  widget, connection, widgetList, connectionList, schema, defaults, clean, excluded,
+  ICONS, widget, connection, widgetList, connectionList, schema, dataOptions, defaults, clean, refetches, excluded,
   widgetTypes: () => [...widgetTypes.values()],
   connectionTypes: () => [...connectionTypes.values()],
 };

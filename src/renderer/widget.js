@@ -31,10 +31,17 @@
 
   // ---------------------------------------------------------------- content
 
+  // Nothing to show yet: faint rows in the widget's own layout, so the first
+  // content arrives where the eye already is. Once there is content, a
+  // refresh keeps it on screen and only the footer says so.
+  const PLACEHOLDER = `<div class="placeholder" role="status" aria-label="Loading">${
+    '<div class="ph-row"><span class="ph-lead"></span><span class="ph-lines"><span></span><span></span></span></div>'.repeat(4)
+  }</div>`;
+
   function render(payload) {
     last = payload;
     if (payload.loading) {
-      el.preview.innerHTML = '<p class="loading">Loading…</p>';
+      el.preview.innerHTML = PLACEHOLDER;
     } else {
       const top = el.preview.scrollTop;
       el.preview.innerHTML = window.NoteMarkdown.renderWidget(payload.markdown);
@@ -46,7 +53,10 @@
 
   // A code span that opens a list item is its lead. Size one gutter to the
   // widest lead, so every title in the widget starts at the same place.
+  // Hidden content measures as zero — a new widget gets its first data while
+  // its settings are open — so it is measured when it is shown instead.
   function sizeLeads() {
+    if (el.preview.hidden) return;
     let widest = 0;
     for (const code of el.preview.querySelectorAll('li > code:first-child')) {
       if (code.previousSibling) continue; // text before it: inline code, not a lead
@@ -74,7 +84,8 @@
   function renderFoot() {
     const p = last || { loading: true };
     let text;
-    if (p.refreshing) text = 'Refreshing…';
+    if (p.blocked) text = ''; // the body says what's missing; nothing is loading
+    else if (p.refreshing) text = 'Refreshing…';
     else if (p.failed) text = 'Couldn’t load · click to try again';
     else if (p.error) text = p.fetchedAt ? `${p.error} · showing ${clock(p.fetchedAt)}` : p.error;
     else if (p.fetchedAt) text = `Updated ${ago(p.fetchedAt)}${p.warning ? ` · ${p.warning}` : ''}`;
@@ -96,6 +107,7 @@
     el.btnSettings.setAttribute('aria-pressed', String(open));
     el.btnSettings.title = open ? 'Back to the widget' : 'Widget settings';
     if (open) buildSettings();
+    else sizeLeads();
   }
 
   // The widget describes its settings; fields.js draws them, the same way as

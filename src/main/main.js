@@ -765,16 +765,21 @@ const HTTP_REASONS = {
   410: 'link no longer exists',
 };
 
-async function fetchText(url) {
+// `options` carries a method, headers and a body for APIs that need them
+// (Linear's is a POST); a plain GET needs none. A failed response keeps the
+// start of its body, since an API explains itself there.
+async function fetchText(url, options = {}) {
+  const { method = 'GET', headers, body } = options;
   let response;
   try {
-    response = await net.fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+    response = await net.fetch(url, { method, headers, body, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   } catch (err) {
     throw new Error(err && err.name === 'TimeoutError' ? 'timed out' : 'no connection');
   }
   if (!response.ok) {
     const error = new Error(`${HTTP_REASONS[response.status] || 'server error'} (${response.status})`);
     error.status = response.status;
+    error.body = await response.text().then((text) => text.slice(0, 64 * 1024), () => '');
     throw error;
   }
   if (Number(response.headers.get('content-length') || 0) > FETCH_MAX_BYTES) throw new Error('too large');
@@ -792,6 +797,11 @@ const runtime = createRuntime({
   store: connections,
   fetchText,
   onSummary: () => notifyChanged(),
+  // Options a settings form takes from the data (teams) have changed.
+  onForm: (id) => {
+    const win = windows.get(id);
+    if (win && !win.isDestroyed()) win.webContents.send('widget:formChanged');
+  },
 });
 
 // A command behind a widget link, as opposed to a URL. Both are framework
@@ -907,10 +917,11 @@ function widgetOf(event) {
 }
 
 // The settings form: the schema with each connections field's options filled
-// in from what is connected now, and the settings cleaned against it.
+// in from what is connected now, each checklist's from the widget's last
+// fetch, and the settings cleaned against it.
 function widgetForm(w) {
   return {
-    schema: registry.schema(w.def.type, (type) => connections.list(type)),
+    schema: registry.schema(w.def.type, (type) => connections.list(type), runtime.source(w.id)),
     settings: registry.clean(w.def.type, w.note.widget.settings, connections.exists),
   };
 }
@@ -940,16 +951,14 @@ ipcMain.handle('widget:form', (event) => {
 
 // Settings come back through the same rules as defaults, so a widget only
 // ever sees values its schema allows. A change to which connections it
-// shows means refetching; anything else only redraws.
+// uses means fetching again; anything else only redraws.
 ipcMain.handle('widget:setSettings', (event, patch) => {
   const w = widgetOf(event);
   if (!w || !w.def) return null;
   const before = registry.clean(w.def.type, w.note.widget.settings, connections.exists);
   const next = registry.clean(w.def.type, { ...before, ...patch }, connections.exists);
   store.update(w.id, { widget: { ...w.note.widget, settings: next } });
-  const refetch = w.def.settings.some((f) => f.type === 'connections'
-    && JSON.stringify(before[f.key]) !== JSON.stringify(next[f.key]));
-  if (refetch) {
+  if (registry.refetches(w.def.type, before, next)) {
     runtime.reset(w.id);
     runtime.refresh(w.id);
   } else {

@@ -49,6 +49,7 @@ body.widget .markdown code.lead {
   left: 0;
   min-width: var(--lead-width, auto);
   text-align: center;
+  white-space: nowrap; /* "28 d" is one chip, never two lines */
   color: var(--muted);
 }
 
@@ -86,7 +87,34 @@ body.widget .markdown li:has(> strong) code.lead { color: var(--fg); }
 body.widget .markdown li:has(> s) { color: var(--muted); }
 body.widget .markdown li:has(> s) code.lead { opacity: 0.7; }
 
-.loading { color: var(--muted); font-style: italic; }
+/* First load: rows shaped like the real ones — a lead chip, a title and a
+   shorter meta line — breathing gently until the content replaces them. */
+.placeholder { padding-top: 4px; }
+
+.ph-row { display: flex; gap: 8px; margin-bottom: 14px; }
+
+.ph-lead,
+.ph-lines span {
+  display: block;
+  height: 10px;
+  border-radius: 4px;
+  background: var(--chip);
+  animation: breathe 1.4s ease-in-out infinite;
+}
+
+.ph-lead { flex: 0 0 44px; height: 16px; }
+.ph-lines { flex: 1; display: flex; flex-direction: column; gap: 7px; padding-top: 3px; }
+.ph-lines span:first-child { width: 78%; }
+.ph-lines span:last-child { width: 42%; height: 8px; }
+.ph-row:nth-child(2) .ph-lines span:first-child { width: 64%; }
+.ph-row:nth-child(3) .ph-lines span:first-child { width: 86%; }
+.ph-row:nth-child(4) { opacity: 0.6; }
+
+@keyframes breathe { 50% { opacity: 0.45; } }
+
+@media (prefers-reduced-motion: reduce) {
+  .ph-lead, .ph-lines span { animation: none; }
+}
 
 /* -------------------------------------------------------------- settings */
 
