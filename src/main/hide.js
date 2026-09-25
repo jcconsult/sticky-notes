@@ -6,11 +6,14 @@
  *
  *   first press     hide at once, then wait to see whether repeats follow
  *   repeats follow  a hold: show again as soon as they stop (peek)
- *   no repeat       a tap: stay hidden until the next press, or until the
- *                   user has been idle for `autoShowAfter()` seconds
+ *   no repeat       a tap: stay hidden until the next press, or until one of
+ *                   the rules below brings them back
  *
- * Idle means no mouse or keyboard input anywhere, so hidden notes never
- * reappear while someone is working in the app behind them.
+ * Tapped-away notes come back
+ *   - after `autoShowAfter()` seconds without mouse or keyboard input, or
+ *   - after `limitSeconds()` even if the user is still working — at the
+ *     next short pause in their input, so never under a click,
+ * but not while `presenting()`. A rule set to 0 is off.
  *
  * No Electron in here: the caller injects what hiding, showing and idle time
  * mean, which is also what lets the tests drive it with a fake clock.
@@ -23,12 +26,18 @@
 const FIRST_REPEAT_MS = 1100;
 const REPEAT_GAP_MS = 250;
 const IDLE_POLL_MS = 1000;
+// When the time limit is up, notes wait for this much stillness before they
+// return, so they never appear in the middle of a click or a sentence.
+const PAUSE_SECONDS = 2;
 
 function createHider({
   hide,
   show,
   idleSeconds,
   autoShowAfter,
+  limitSeconds = () => 0,
+  presenting = () => false,
+  now = Date.now,
   timers = { setTimeout, clearTimeout, setInterval, clearInterval },
 }) {
   // shown      notes visible
@@ -42,6 +51,7 @@ function createHider({
   let state = 'shown';
   let timer = null;
   let poll = null;
+  let hiddenAt = 0;
 
   function clearTimer() {
     if (timer) timers.clearTimeout(timer);
@@ -68,15 +78,25 @@ function createHider({
     show(reason);
   }
 
-  // A tap: stay hidden, and start watching for the user to go idle.
+  // A tap: stay hidden, and check once a second whether a rule says the
+  // notes should come back. The settings are read on every check, so a
+  // change made while notes are hidden applies straight away.
   function stick() {
     state = 'hidden';
-    const seconds = autoShowAfter();
-    if (seconds > 0) {
-      poll = timers.setInterval(() => {
-        if (idleSeconds() >= seconds) reveal('idle');
-      }, IDLE_POLL_MS);
+    hiddenAt = now();
+    poll = timers.setInterval(check, IDLE_POLL_MS);
+  }
+
+  function check() {
+    if (presenting()) return; // held off while a slideshow or full-screen app runs
+    const idle = idleSeconds();
+    const idleAfter = autoShowAfter();
+    if (idleAfter > 0 && idle >= idleAfter) {
+      reveal('idle');
+      return;
     }
+    const limit = limitSeconds();
+    if (limit > 0 && now() - hiddenAt >= limit * 1000 && idle >= PAUSE_SECONDS) reveal('limit');
   }
 
   function press() {
@@ -147,4 +167,4 @@ function createHider({
   return { press, toggle, reset, isHidden };
 }
 
-module.exports = { createHider, FIRST_REPEAT_MS, REPEAT_GAP_MS, IDLE_POLL_MS };
+module.exports = { createHider, FIRST_REPEAT_MS, REPEAT_GAP_MS, IDLE_POLL_MS, PAUSE_SECONDS };

@@ -11,6 +11,10 @@
 /* The title (note.css) shows the widget's name until it is renamed. */
 
 .btn[aria-pressed="true"]#btn-settings { opacity: 1; background: rgba(255, 255, 255, 0.2); }
+/* note.css fades an unpressed toggle (that's for the pin); the gear is a
+   plain button when closed and must not look disabled. */
+#btn-settings[aria-pressed="false"] { opacity: 0.68; }
+#btn-settings[aria-pressed="false"]:hover { opacity: 1; }
 
 /* ------------------------------------------------------------------ rows */
 

@@ -7,6 +7,7 @@ const {
 
 const store = require('./store');
 const { createHider } = require('./hide');
+const { isPresenting } = require('./presenting');
 const connections = require('./connections');
 const registry = require('./widgets/registry');
 const { createRuntime } = require('./widgets/runtime');
@@ -20,10 +21,16 @@ const DEFAULT_SETTINGS = {
   // and Cursor, so taking it costs nothing. Ctrl+Alt chords are avoided: on
   // many European layouts Ctrl+Alt is AltGr, which types @, £, $ and braces.
   peekShortcut: 'F1',
-  autoShowAfter: 30,        // seconds idle before tapped-away notes return; 0 = never
+  // Bring hidden notes back… (Settings reads these as one sentence)
+  autoShowIdle: true,       // …after autoShowAfter seconds without input
+  autoShowAfter: 30,
+  hideLimitOn: false,       // …after hideLimitMinutes, even while working
+  hideLimitMinutes: 10,
+  holdWhilePresenting: true, // …but not during a slideshow or full-screen app
 };
 
-const AUTO_SHOW_CHOICES = [0, 15, 30, 60, 300];
+const AUTO_SHOW_CHOICES = [15, 30, 60, 300];
+const HIDE_LIMIT_CHOICES = [5, 10, 30, 60];
 
 // A key on its own is only allowed if nothing types with it. F12 is excluded
 // outright: Windows reserves it for debuggers and RegisterHotKey refuses it.
@@ -95,6 +102,8 @@ function theme() {
 // ---------------------------------------------------------------------------
 // Settings (global, not per note)
 
+// Older settings files are upgraded once at startup (migrations.js), so
+// this only ever sees the current shape.
 function settings() {
   return { ...DEFAULT_SETTINGS, ...(store.ui('settings') || {}) };
 }
@@ -158,7 +167,7 @@ function showAllNotes(reason) {
   refreshTray();
   devLog(`[hide] shown (${reason})`);
 
-  if (reason !== 'idle') {
+  if (reason !== 'idle' && reason !== 'limit') {
     for (const win of live()) win.setOpacity(target);
     return;
   }
@@ -174,7 +183,9 @@ const hider = createHider({
   hide: hideAllNotes,
   show: showAllNotes,
   idleSeconds: () => powerMonitor.getSystemIdleTime(),
-  autoShowAfter: () => settings().autoShowAfter,
+  autoShowAfter: () => (settings().autoShowIdle ? settings().autoShowAfter : 0),
+  limitSeconds: () => (settings().hideLimitOn ? settings().hideLimitMinutes * 60 : 0),
+  presenting: () => settings().holdWhilePresenting && isPresenting(),
 });
 
 function validShortcut(accelerator) {
@@ -1077,6 +1088,7 @@ ipcMain.handle('settings:get', () => ({
   autoStart: autoStartOn(),
   peekOk,
   palette: PALETTE,
+  version: app.getVersion(),
 }));
 
 ipcMain.handle('settings:set', (_event, patch) => {
@@ -1101,6 +1113,10 @@ ipcMain.handle('settings:set', (_event, patch) => {
   }
   if ('newNotesPinned' in patch) next.newNotesPinned = !!patch.newNotesPinned;
   if (AUTO_SHOW_CHOICES.includes(patch.autoShowAfter)) next.autoShowAfter = patch.autoShowAfter;
+  if (HIDE_LIMIT_CHOICES.includes(patch.hideLimitMinutes)) next.hideLimitMinutes = patch.hideLimitMinutes;
+  for (const key of ['autoShowIdle', 'hideLimitOn', 'holdWhilePresenting']) {
+    if (key in patch) next[key] = !!patch[key];
+  }
 
   store.setUi('settings', next);
   applySettings(next);

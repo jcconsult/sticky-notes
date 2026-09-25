@@ -74,6 +74,9 @@ body {
   stroke-linecap: round; stroke-linejoin: round;
 }
 
+/* The gear is drawn on a 24-unit grid; this matches the 16-unit icons' weight. */
+.btn svg.cog { stroke-width: 2; }
+
 /* --------------------------------------------------------------------- list */
 
 .list {
@@ -186,61 +189,155 @@ body {
 
 /* ----------------------------------------------------------------- settings */
 
+/* Groups are raised cards on a recessed page. Which way depth goes follows
+   the theme: dark raises cards to --chip, light sinks the page to --chip. */
+:root { --page: var(--bg); --card: var(--chip); }
+:root[data-theme="light"] { --page: var(--chip); --card: var(--bg); }
+
 .settings {
   flex: 1;
   min-height: 0;
   margin: 0;
-  padding: 6px 14px 14px;
+  padding: 2px 12px 16px;
   overflow-y: auto;
   overscroll-behavior: contain;
+  background: var(--page);
   accent-color: var(--fg); /* native controls, tinted to the theme */
 }
 
 .settings[hidden] { display: none; }
 
-.setting { padding: 12px 0; border-bottom: 1px solid var(--line); }
-.setting:last-child { border-bottom: 0; }
-
-.setting-head {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.setting label { font-weight: 600; }
-
-.setting output {
+.group-head {
+  margin: 16px 4px 6px;
   color: var(--muted);
-  font-size: 11.5px;
-  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
 
-.hint { margin: 7px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
+.group-desc { margin: -2px 4px 8px; color: var(--muted); font-size: 11.5px; line-height: 1.4; }
 
-.setting input[type="range"] { width: 100%; margin: 0; }
+.card {
+  margin: 0 0 6px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--card);
+}
 
-.setting.switch {
+/* One setting: label (and a short description) left, control right. */
+.opt {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-height: 44px;
+  padding: 9px 12px;
+  border-top: 1px solid var(--line);
 }
 
-.setting.switch input { width: 15px; height: 15px; margin: 0; }
+.card > .opt:first-child { border-top: 0; }
+label.opt { cursor: default; }
 
-.select {
-  width: 100%;
-  padding: 5px 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--chip);
-  color: var(--fg);
-  font: inherit;
+.opt.stack { display: block; }
+.opt-top { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 8px; }
+.opt-top label, .opt-label { font-weight: 600; }
+.opt.stack .opt-label { display: block; margin-bottom: 9px; }
+.opt-top output { color: var(--muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.opt.stack .opt-desc { display: block; margin-top: 7px; }
+
+.opt-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.opt-desc { color: var(--muted); font-size: 11.5px; line-height: 1.35; }
+
+.opt input[type="range"] { width: 100%; margin: 0; }
+
+/* A Windows-style switch, from a plain checkbox. */
+.switch {
+  position: relative;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 18px;
+  margin: 0;
+  border: 1px solid var(--muted);
+  border-radius: 9px;
+  background: transparent;
+  appearance: none;
+  cursor: default;
+  transition: background-color 120ms linear, border-color 120ms linear;
+}
+
+.switch::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: transform 120ms ease-out, background-color 120ms linear;
+}
+
+.switch:checked { border-color: var(--fg); background: var(--fg); }
+.switch:checked::after { background: var(--card); transform: translateX(16px); }
+.switch:focus-visible { outline: 1px solid var(--fg); outline-offset: 2px; }
+
+/* Rules that read as one sentence, one clause per line. */
+.rules { padding: 10px 12px 12px; border-top: 1px solid var(--line); }
+.rules-head { display: block; margin-bottom: 6px; font-weight: 600; }
+
+.rule {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 8px;
+  align-items: baseline;
+  padding: 4px 0;
+  line-height: 1.7;
   cursor: default;
 }
 
-.select:focus-visible { outline: 1px solid var(--fg); outline-offset: 1px; }
+.rule input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  transform: translateY(2px);
+}
+
+/* A clause that is off greys out; so does "but not during…" when there is
+   nothing left for it to hold back. */
+.rule:has(input[type="checkbox"]:not(:checked)) > span,
+.rule.idle > span { color: var(--muted); }
+
+.inline-select {
+  padding: 1px 2px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--page);
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+}
+
+.inline-select:focus-visible { outline: 1px solid var(--fg); outline-offset: 1px; }
+
+.rule-note { margin: 6px 0 0 22px; color: var(--muted); font-size: 11.5px; }
+
+.keys-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 12px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+}
+
+.card > .keys-row:first-child { border-top: 0; }
+.keys-row kbd { padding: 1px 6px; border-bottom-width: 1px; font-size: 11px; }
+.keys-row .muted { color: var(--muted); font-size: 11.5px; }
+
+.page-foot { margin: 14px 4px 0; color: var(--muted); font-size: 11px; text-align: center; }
 
 .swatches { display: flex; gap: 10px; }
 
@@ -252,14 +349,14 @@ body {
 }
 
 .swatches button:hover { transform: scale(1.12); }
-.swatches button[aria-checked="true"] { box-shadow: 0 0 0 2px var(--bg), 0 0 0 3.5px var(--fg); }
+.swatches button[aria-checked="true"] { box-shadow: 0 0 0 2px var(--card), 0 0 0 3.5px var(--fg); }
 .swatches button:focus-visible { outline: 1px solid var(--fg); outline-offset: 3px; }
 
 body.showing-settings .foot { display: none; }
 
 /* ---------------------------------------------------------- shortcut rows */
 
-.shortcut { display: flex; align-items: center; gap: 8px; }
+.shortcut { display: flex; flex: 0 0 auto; align-items: center; gap: 2px; }
 
 kbd {
   padding: 3px 7px;
@@ -275,7 +372,7 @@ kbd {
   white-space: nowrap;
 }
 
-#peek-keys { min-width: 108px; text-align: center; }
+#peek-keys { min-width: 40px; margin-right: 2px; text-align: center; }
 
 .shortcut.listening #peek-keys {
   border-style: dashed;
@@ -297,19 +394,8 @@ kbd {
   transition: color 110ms linear, background-color 110ms linear;
 }
 
-.ghost:hover { color: var(--fg); background: var(--chip); }
+.ghost:hover { color: var(--fg); background: var(--line); }
 .ghost:focus-visible { outline: 1px solid var(--fg); outline-offset: -1px; }
-
-.keys {
-  display: grid;
-  grid-template-columns: auto 1fr;
-  gap: 7px 12px;
-  margin: 0;
-  align-items: center;
-}
-
-.keys dt { display: flex; gap: 3px; }
-.keys dd { margin: 0; color: var(--muted); font-size: 11.5px; }
 
 /* --------------------------------------------------------------------- foot */
 
@@ -364,16 +450,7 @@ kbd {
   letter-spacing: 0.02em;
 }
 
-/* Connections are drawn by fields.js; their styles are in fields.css. A
-   section heading groups them, the way each type gets one. */
-.connections-head {
-  margin: 18px 0 0;
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
+/* Connection cards are drawn by fields.js and styled in fields.css. */
 
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb {

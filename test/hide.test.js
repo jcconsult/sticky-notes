@@ -45,7 +45,7 @@ function fakeClock() {
 }
 
 // A hider wired to the fake clock, recording every hide and show.
-function setup({ autoShowAfter = 30 } = {}) {
+function setup({ autoShowAfter = 30, limitSeconds = 0, presenting = () => false } = {}) {
   const clock = fakeClock();
   const log = [];
   let lastInput = 0;
@@ -54,6 +54,9 @@ function setup({ autoShowAfter = 30 } = {}) {
     show: (reason) => log.push(`show:${reason}`),
     idleSeconds: () => Math.floor((clock.now() - lastInput) / 1000),
     autoShowAfter: () => autoShowAfter,
+    limitSeconds: () => limitSeconds,
+    presenting,
+    now: () => clock.now(),
     timers: clock.timers,
   });
   // A key press is also input, as far as the idle clock is concerned.
@@ -138,6 +141,52 @@ t = setup({ autoShowAfter: 0 });
 t.press();
 t.clock.advance(10 * 60 * 1000);
 check('idle: "Never" keeps them hidden', t.hider.isHidden(), true);
+
+// --- time limit ------------------------------------------------------------
+
+// Idle return off, a 10-minute limit, and the user typing every second.
+t = setup({ autoShowAfter: 0, limitSeconds: 600 });
+t.press();
+for (let s = 0; s < 610; s += 1) {
+  t.clock.advance(1000);
+  t.input();
+}
+check('limit: still hidden while the user keeps working past it', t.hider.isHidden(), true);
+t.clock.advance(3000); // a short pause
+check('limit: returns at the first pause after it', t.log, ['hide', 'show:limit']);
+
+t = setup({ autoShowAfter: 0, limitSeconds: 600 });
+t.press();
+for (let s = 0; s < 300; s += 1) {
+  t.clock.advance(1000);
+  t.input();
+}
+t.clock.advance(5000);
+check('limit: a pause before the limit does nothing', t.hider.isHidden(), true);
+
+t = setup({ autoShowAfter: 30, limitSeconds: 600 });
+t.press();
+t.clock.advance(31000);
+check('both rules: whichever comes first', t.log, ['hide', 'show:idle']);
+
+// --- presenting --------------------------------------------------------------
+
+let showing = true;
+t = setup({ autoShowAfter: 30, presenting: () => showing });
+t.press();
+t.clock.advance(5 * 60 * 1000);
+check('presenting: idle return is held off', t.hider.isHidden(), true);
+showing = false;
+t.clock.advance(2000);
+check('presenting ends: the held rule applies', t.log, ['hide', 'show:idle']);
+
+showing = true;
+t = setup({ autoShowAfter: 0, limitSeconds: 60, presenting: () => showing });
+t.press();
+t.clock.advance(5 * 60 * 1000);
+check('presenting: the time limit is held off too', t.hider.isHidden(), true);
+t.press();
+check('presenting: the shortcut still shows them', t.log, ['hide', 'show:pressed']);
 
 // --- presses that show -----------------------------------------------------
 

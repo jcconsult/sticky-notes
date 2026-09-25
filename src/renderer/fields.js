@@ -97,76 +97,138 @@
 
   // ----------------------------------------------------------- connections
 
+  // The renderer's own icons. An extension names one; it never supplies
+  // markup, so nothing it declares can inject HTML here.
+  const ICONS = {
+    calendar: '<rect x="2.5" y="3.5" width="11" height="10" rx="2"/><path d="M2.5 6.5h11M5.5 2v3M10.5 2v3"/>',
+    key: '<circle cx="5.5" cy="10.5" r="3"/><path d="M7.6 8.4 13 3M11 5l1.5 1.5"/>',
+    plug: '<path d="M6 2v3M10 2v3M4.5 5h7v2.5a3.5 3.5 0 0 1-7 0V5ZM8 11v3"/>',
+  };
+  const BIN = '<path d="M3.5 4.5h9M6.5 4.5V3h3v1.5M5 4.5l.5 8h5l.5-8"/>';
+  const PLUS = '<path d="M8 3.5v9M3.5 8h9"/>';
+
+  function icon(paths) {
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('viewBox', '0 0 16 16');
+    svg.setAttribute('aria-hidden', 'true');
+    svg.innerHTML = paths; // constants above only
+    return svg;
+  }
+
   /**
-   * One connection type's section: what is connected, and a form to add.
+   * One connection type's card: what is connected, and — behind + Add — a
+   * form to add another, with the help folded away until asked for.
    * @param {object} type        from registry.connectionList()
    * @param {object[]} list      this type's connections (label, detail, health)
-   * @param {{ onAdd(values): Promise<{ok, error}>, onRemove(id) }} handlers
+   * @param {{ onAdd(values): Promise<{ok, error}>, onRemove(c), open?: boolean }} handlers
    */
-  function connectionType(type, list, { onAdd, onRemove }) {
-    const section = h('div', 'setting connection-type');
-    section.dataset.type = type.type;
-    const head = h('div', 'setting-head');
-    head.append(h('label', null, type.name));
-    section.append(head);
+  function connectionType(type, list, { onAdd, onRemove, open = false }) {
+    const card = h('section', 'card conn-card');
+    card.dataset.type = type.type;
 
-    const rows = h('ul', 'conns');
-    for (const c of list) {
-      const li = h('li', `conn${c.health && !c.health.ok ? ' broken' : ''}`);
-      const name = h('span', 'conn-name', c.label);
-      name.append(h('small', null, [c.detail, healthText(c.health)].filter(Boolean).join(' · ')));
-      const remove = h('button', 'ghost', 'Remove');
-      remove.addEventListener('click', () => onRemove(c));
-      li.append(name, remove);
-      rows.append(li);
+    const head = h('div', 'conn-head');
+    const title = h('span', 'conn-title');
+    title.append(icon(ICONS[type.icon] || ICONS.plug), document.createTextNode(type.name));
+    head.append(title);
+    card.append(head);
+
+    if (list.length) {
+      const rows = h('ul', 'conn-list');
+      for (const c of list) {
+        const broken = c.health && !c.health.ok;
+        const li = h('li', `conn-row${broken ? ' broken' : ''}`);
+        const dot = h('span', `health ${broken ? 'bad' : 'ok'}`);
+        dot.title = broken ? 'Not working' : 'Working';
+        const text = h('span', 'conn-text');
+        text.append(
+          h('span', 'conn-name', c.label),
+          h('span', 'conn-meta', [c.detail, healthText(c.health) || 'Working'].filter(Boolean).join(' · ')),
+        );
+        const remove = h('button', 'icon-btn');
+        remove.title = `Remove ${c.label}`;
+        remove.setAttribute('aria-label', `Remove ${c.label}`);
+        remove.append(icon(BIN));
+        remove.addEventListener('click', () => onRemove(c));
+        li.append(dot, text, remove);
+        rows.append(li);
+      }
+      card.append(rows);
+    } else {
+      card.append(h('p', 'conn-empty', `No ${type.noun}s yet.`));
     }
-    section.append(rows);
 
-    // A single-account type (an API key) shows its form only until it is set.
-    if (type.multiple || !list.length) {
-      const form = h('div', 'conn-add');
-      const inputs = type.fields.map((field) => {
-        const input = h('input', 'text-input');
-        input.type = field.secret ? 'password' : 'text';
-        input.placeholder = field.placeholder || field.label;
-        input.spellcheck = false;
-        input.autocomplete = 'off';
-        input.setAttribute('aria-label', field.label);
-        input.dataset.key = field.key;
-        return input;
+    // A single-account type (an API key) offers Add only until it is set.
+    if (!type.multiple && list.length) return card;
+
+    const addButton = h('button', 'add-btn');
+    addButton.append(icon(PLUS), document.createTextNode('Add'));
+    addButton.setAttribute('aria-expanded', 'false');
+    head.append(addButton);
+
+    const form = h('div', 'conn-add');
+    form.hidden = true;
+    const line = h('div', 'add-line');
+    const inputs = type.fields.map((field) => {
+      const input = h('input', 'text-input');
+      // A secret that is a link is still better seen while pasting it.
+      input.type = field.secret && field.type !== 'url' ? 'password' : 'text';
+      input.placeholder = field.placeholder || field.label;
+      input.spellcheck = false;
+      input.autocomplete = 'off';
+      input.setAttribute('aria-label', field.label);
+      input.dataset.key = field.key;
+      return input;
+    });
+    const submitButton = h('button', 'primary', 'Add');
+    line.append(...inputs, submitButton);
+    const status = h('p', 'add-status');
+    status.hidden = true;
+    form.append(line, status);
+
+    if (type.help.length) {
+      const help = h('details', 'help');
+      help.append(h('summary', null, `Where do I find the ${(type.fields[0].label || 'details').toLowerCase()}?`));
+      const steps = h('dl');
+      for (const step of type.help) steps.append(h('dt', null, step.label), h('dd', null, step.text));
+      help.append(steps);
+      form.append(help);
+    }
+    card.append(form);
+
+    const say = (text, error = false) => {
+      status.hidden = !text;
+      status.textContent = text || '';
+      status.classList.toggle('error', error);
+    };
+
+    const toggle = (show) => {
+      form.hidden = !show;
+      addButton.setAttribute('aria-expanded', String(show));
+      if (show) inputs[0].focus();
+    };
+    addButton.addEventListener('click', () => toggle(form.hidden));
+
+    const submit = () => {
+      const values = Object.fromEntries(inputs.map((input) => [input.dataset.key, input.value.trim()]));
+      if (Object.values(values).every((v) => !v) || submitButton.disabled) return;
+      submitButton.disabled = true;
+      say(`Checking the ${type.noun}…`);
+      onAdd(values).then((result) => {
+        submitButton.disabled = false;
+        if (!result.ok) say(result.error, true); // on success the page redraws with it listed
       });
-      // A secret field that is a link is still better seen while pasting.
-      for (const [i, field] of type.fields.entries()) {
-        if (field.type === 'url') inputs[i].type = 'text';
-      }
-      const add = h('button', 'ghost', 'Add');
-      const hint = h('p', 'hint', type.help);
-
-      const submit = () => {
-        const values = Object.fromEntries(inputs.map((input) => [input.dataset.key, input.value.trim()]));
-        if (Object.values(values).every((v) => !v) || add.disabled) return;
-        add.disabled = true;
-        hint.classList.remove('error');
-        hint.textContent = `Checking the ${type.noun}…`;
-        onAdd(values).then((result) => {
-          add.disabled = false;
-          if (result.ok) return; // the page redraws with it listed
-          hint.textContent = result.error;
-          hint.classList.add('error');
-        });
-      };
-      add.addEventListener('click', submit);
-      for (const input of inputs) {
-        input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
-        input.addEventListener('input', () => {
-          hint.textContent = type.help;
-          hint.classList.remove('error');
-        });
-      }
-      form.append(...inputs, add);
-      section.append(form, hint);
+    };
+    submitButton.addEventListener('click', submit);
+    for (const input of inputs) {
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') submit();
+        if (e.key === 'Escape') { e.stopPropagation(); toggle(false); }
+      });
+      input.addEventListener('input', () => say(''));
     }
-    return section;
+
+    if (open) toggle(true);
+    return card;
   }
 
   window.Fields = { settings, connectionType };

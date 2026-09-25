@@ -2,17 +2,30 @@ const fs = require('fs');
 const path = require('path');
 const { app } = require('electron');
 const { DEFAULT_COLOR } = require('../shared/palette');
+const { migrate, CURRENT } = require('./migrations');
 
 // One JSON file in %APPDATA%/Sticky Notes. No database: a few hundred notes of
 // plain text is kilobytes, and a single file is trivially backed up or synced
 // by whatever the user already uses.
 let file = null;
-let data = { notes: [], ui: {} };
+let data = { version: CURRENT, notes: [], ui: {} };
 let writeTimer = null;
 
 function notesPath() {
   if (!file) file = path.join(app.getPath('userData'), 'notes.json');
   return file;
+}
+
+// An older file is brought up to the current shape once, at startup
+// (migrations.js). The original is kept beside it first, so an upgrade can
+// never cost anyone their notes: notes.json.v1.bak and so on.
+function upgrade() {
+  const { from, to } = migrate(data);
+  if (from === to) return;
+  try {
+    fs.copyFileSync(notesPath(), `${notesPath()}.v${from}.bak`);
+  } catch { /* the upgrade still goes ahead; the original is untouched until flush */ }
+  flush();
 }
 
 function load() {
@@ -22,7 +35,10 @@ function load() {
     // not be treated as having corrupted it.
     const raw = fs.readFileSync(notesPath(), 'utf8').replace(/^﻿/, '');
     const parsed = JSON.parse(raw);
-    if (parsed && Array.isArray(parsed.notes)) data = { ui: {}, ...parsed };
+    if (parsed && Array.isArray(parsed.notes)) {
+      data = { ui: {}, ...parsed };
+      upgrade();
+    }
   } catch (err) {
     if (err.code !== 'ENOENT') {
       // A corrupt file must never cost the user their notes silently.

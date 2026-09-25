@@ -15,7 +15,7 @@
     "dev": "electron . --dev",
     "dev:reset": "node tools/dev-reset.js",
     "check": "node tools/check.js",
-    "test": "node test/format.test.js && node test/hide.test.js && node test/widgets.test.js && node test/extensions.test.js",
+    "test": "node test/format.test.js && node test/hide.test.js && node test/widgets.test.js && node test/extensions.test.js && node test/migrations.test.js",
     "vendor": "node tools/vendor.js",
     "icon": "node tools/make-icon.js",
     "postinstall": "node tools/vendor.js",
@@ -38,7 +38,9 @@
     },
     "files": [
       "src/**/*",
-      "package.json"
+      "package.json",
+      "!node_modules/koffi/build/koffi/{darwin_*,freebsd_*,linux_*,musl_*,openbsd_*,win32_arm64,win32_ia32}/**",
+      "!node_modules/koffi/{src,vendor,doc}/**"
     ],
     "win": {
       "target": [
@@ -62,6 +64,7 @@
     }
   },
   "dependencies": {
-    "ical.js": "^2.2.1"
+    "ical.js": "^2.2.1",
+    "koffi": "^2.16.3"
   }
 }

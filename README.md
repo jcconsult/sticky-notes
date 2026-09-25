@@ -40,9 +40,10 @@ No account, no sync, no subscription. Your notes are one JSON file on your disk.
 - **Formatting toolbar** — select text while editing and a small toolbar
   appears: bold, italic, strikethrough, code, link, heading, checklist.
 - **Hide notes** — press `F1` to hide every note and reach the app behind them;
-  press again to bring them back, or they return on their own once you stop
-  using the mouse and keyboard. Hold the key instead to hide them only while
-  it is held. Rebindable.
+  press again to bring them back. Hold the key instead to hide them only while
+  it is held. Hidden notes can also come back on their own — after a spell
+  without mouse or keyboard use, or after a set time even while you work — but
+  never during a slideshow or full-screen app. Rebindable.
 - **Widgets** — notes the app writes for you, in the same style. The first is
   **Agenda**: today and tomorrow from your Google and Outlook calendars, with
   what's on now highlighted and a Join button for Teams, Meet and Zoom.
@@ -101,13 +102,22 @@ and clicking it brings them back.
 > On Windows 11 a new tray icon starts hidden under the `^` chevron. Drag it
 > out onto the tray so it is always one click away.
 
-**Settings** live behind the gear in the All Notes title bar: note
-transparency, default colour for new notes, whether new notes start pinned,
-starting with Windows, the hide shortcut, and how long hidden notes wait
-before coming back. Click **Change** next to the shortcut and press the key or
-combination you want — if another app already owns it, it says so instead of
-failing quietly. An F-key can be used on its own; while Sticky Notes runs,
-other apps no longer receive it.
+**Settings** live behind the gear in the All Notes title bar, in groups:
+**Appearance** (transparency, default colour), **Behaviour** (keep new notes
+on top, start with Windows), **Hide notes**, **Connections** (accounts for
+widgets) and **Keyboard**. Click **Change** next to the hide shortcut and press
+the key or combination you want — if another app already owns it, it says so
+instead of failing quietly. An F-key can be used on its own; while Sticky
+Notes runs, other apps no longer receive it.
+
+**Hide notes** reads as one sentence you tick parts of:
+
+> Bring hidden notes back ☑ after *30 s* without mouse or keyboard use,
+> ☐ after *10 min*, even if I'm still working,
+> ☑ but not during a slideshow or full-screen app.
+
+Screen sharing in Teams or Zoom in a normal window isn't detected — if you
+share often, untick the first rule.
 
 ### Keyboard
 
@@ -205,7 +215,7 @@ written. `npm run dev:reset` discards that copy (quit the dev app first).
 | `npm run dev:reset` | Throw the dev copy away; the next `dev` run copies your notes again |
 | `npm start` | Run the checkout as the real app, on your real notes (quit the installed one first) |
 | `npm run check` | Parse every source file |
-| `npm test` | Run the formatting, hide-shortcut, widget and extension-contract tests |
+| `npm test` | Run the formatting, hide-shortcut, widget, extension-contract and migration tests |
 | `npm run pack:dir` | Package to `dist/win-unpacked` without an installer |
 | `npm run dist` | Build the installer into `dist/` |
 
@@ -214,7 +224,9 @@ written. `npm run dev:reset` discards that copy (quit the dev app first).
 ```
 src/main/main.js          windows, tray, settings — all OS-facing behaviour
 src/main/store.js         the JSON file, debounced and written atomically
-src/main/hide.js          the hide shortcut: tap, hold and idle return
+src/main/hide.js          the hide shortcut: tap, hold, and when notes return
+src/main/presenting.js    is a slideshow or full-screen app running? (Windows)
+src/main/migrations.js    versioned, one-time upgrades of notes.json
 src/main/connections.js   accounts of every type; secret fields encrypted
 src/main/widgets/         the widget framework — knows no integration
   registry.js               what extensions contribute, and the settings rules
@@ -237,8 +249,11 @@ tools/make-icon.js        draws build/icon.ico, so no binaries are committed
 
 No bundler and no frontend framework — plain HTML, CSS and JavaScript on
 Electron. `markdown-it` is vendored into `src/vendor/` at install time so the
-sandboxed renderer can load it as a script; `ical.js` (Mozilla's iCalendar
-parser) is the one dependency the main process loads from `node_modules`.
+sandboxed renderer can load it as a script. The main process loads two
+dependencies from `node_modules`: `ical.js` (Mozilla's iCalendar parser) and
+`koffi` (a foreign-function library with prebuilt binaries, for the one
+Windows call Electron doesn't expose — only its Windows x64 binary is
+packaged).
 
 #### Adding an integration
 
@@ -292,9 +307,18 @@ need a sandboxed process first.
   the key is held, and a gap in them stands in for the release. A press with
   no repeats is a tap. The logic lives in `src/main/hide.js`, free of Electron,
   so `test/hide.test.js` plays out taps, holds and idle time on a fake clock.
-- **Hidden notes come back** only after the machine has been idle
-  (`powerMonitor.getSystemIdleTime()`), never on a plain timer, so they cannot
-  reappear under a click in the app behind them.
+- **Hidden notes come back** on idle time (`powerMonitor.getSystemIdleTime()`)
+  or, with the time limit, only at the first two-second pause in input after
+  it — so they never reappear under a click. While presenting they stay
+  hidden: `src/main/presenting.js` asks Windows the same question it asks
+  before showing a notification (`SHQueryUserNotificationState` — a slideshow,
+  full-screen app or game), through `koffi`. If that can't load, the rule does
+  nothing rather than break.
+- **Upgrades migrate data once.** `notes.json` carries a `version`; at startup
+  `src/main/migrations.js` runs each newer migration in order, after copying
+  the original to `notes.json.v<N>.bak`, and writes the current shape. The
+  rest of the app only ever sees the current shape — no compatibility code
+  outside that file. `test/migrations.test.js` covers each one.
 - **Toggle keys can't be the shortcut.** Registering Caps Lock, Num Lock or
   Scroll Lock as a hotkey still flips the lock, so they are not offered; F12 is
   reserved by Windows for debuggers.

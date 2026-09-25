@@ -32,10 +32,13 @@ function widgetList() {
 }
 
 // A connection type as Settings → Connections draws it. `secret` fields are
-// write-only: the form can set them, nothing can read them back.
+// write-only: the form can set them, nothing can read them back. `help` is
+// a list of { label, text } steps; `icon` names one of the renderer's own
+// icons — an extension never supplies markup.
 function connectionList() {
-  return [...connectionTypes.values()].map(({ type, name, noun, multiple, fields, help }) => ({
-    type, name, noun, multiple: !!multiple, help: help || '',
+  return [...connectionTypes.values()].map(({ type, name, noun, multiple, fields, help, icon }) => ({
+    type, name, noun, multiple: !!multiple, icon: icon || null,
+    help: Array.isArray(help) ? help.map(({ label, text }) => ({ label, text })) : [],
     fields: fields.map(({ key, label, type: kind, secret, placeholder }) => ({
       key, label, type: kind, secret: !!secret, placeholder: placeholder || '',
     })),

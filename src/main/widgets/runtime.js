@@ -50,7 +50,7 @@ function createRuntime({ getNote, send, store, fetchText, onSummary }) {
         return {
           message: {
             text: `No ${plural(noun)} connected yet.`,
-            detail: kind && kind.help ? kind.help : null,
+            detail: 'Set it up once in Settings → Connections, and every widget can use it.',
             action: { label: `Connect a ${noun}…`, target: { command: 'connections', type } },
           },
           summary: `No ${plural(noun)} connected`,

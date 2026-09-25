@@ -85,11 +85,19 @@
     count.textContent = none ? '' : `${notes.length} note${notes.length === 1 ? '' : 's'}`;
   }
 
+  // Light or dark decides which way Settings' cards stand out (library.css),
+  // so it is worked out from the theme's own background.
+  function isLight(hex) {
+    const n = parseInt(String(hex).replace('#', ''), 16);
+    return ((n >> 16) & 255) + ((n >> 8) & 255) + (n & 255) > 382;
+  }
+
   function applyTheme(theme) {
     if (!theme) return;
     for (const [key, value] of Object.entries(theme)) {
       document.documentElement.style.setProperty(`--${key}`, value);
     }
+    document.documentElement.dataset.theme = isLight(theme.bg) ? 'light' : 'dark';
   }
 
   // -------------------------------------------------------------- settings
@@ -101,7 +109,14 @@
   const swatches = document.getElementById('default-color');
   const newPinned = document.getElementById('new-pinned');
   const autostart = document.getElementById('autostart');
+  // "Bring hidden notes back": after idle / after a limit / but not presenting
+  const idleOn = document.getElementById('idle-on');
   const autoShow = document.getElementById('auto-show');
+  const limitOn = document.getElementById('limit-on');
+  const limitMinutes = document.getElementById('limit-minutes');
+  const presenting = document.getElementById('presenting');
+  const presentingRule = document.getElementById('presenting-rule');
+  const version = document.getElementById('version');
 
   // Stored as opacity (1 = solid) but shown as transparency, which is what
   // the slider label promises.
@@ -111,7 +126,7 @@
   // ------------------------------------------------------ shortcut capture
 
   const DEFAULT_PEEK = 'F1';
-  const HOW_IT_WORKS = 'Press to hide or show every note; hold it to hide them only while held.';
+  const HOW_IT_WORKS = 'Press to hide or show. Hold to hide only while held.';
   const peek = {
     row: null, keys: null, set: null, reset: null, hint: null, listening: false,
   };
@@ -231,10 +246,14 @@
     if (peek.listening) return;
     peek.keys.textContent = prettyAccelerator(state.peekShortcut);
     peek.row.classList.toggle('failed', state.peekOk === false);
-    const alone = state.peekShortcut && !state.peekShortcut.includes('+');
     peek.hint.textContent = state.peekOk === false
       ? 'Another app already owns that key. Pick a different one.'
-      : `${HOW_IT_WORKS}${alone ? ` Other apps won’t receive ${state.peekShortcut} while Sticky Notes runs.` : ''}`;
+      : HOW_IT_WORKS;
+    // A key on its own is taken from every other app; say so where it shows.
+    const alone = state.peekShortcut && !state.peekShortcut.includes('+');
+    peek.keys.title = alone ? `Other apps won’t receive ${state.peekShortcut} while Sticky Notes runs.` : '';
+    // Reset only matters once the shortcut isn't the default.
+    peek.reset.hidden = state.peekShortcut === DEFAULT_PEEK;
   }
 
   function fillSettings(state) {
@@ -243,7 +262,15 @@
     opacityValue.textContent = `${toPercent(state.opacity)}%`;
     newPinned.checked = !!state.newNotesPinned;
     autostart.checked = !!state.autoStart;
+    idleOn.checked = !!state.autoShowIdle;
     autoShow.value = String(state.autoShowAfter);
+    limitOn.checked = !!state.hideLimitOn;
+    limitMinutes.value = String(state.hideLimitMinutes);
+    presenting.checked = !!state.holdWhilePresenting;
+    // With neither "after" rule on, notes only come back by the shortcut, so
+    // "but not during a slideshow" has nothing to hold back: grey it out.
+    presentingRule.classList.toggle('idle', !state.autoShowIdle && !state.hideLimitOn);
+    if (state.version) version.textContent = `Sticky Notes ${state.version}`;
     fillPeek(state);
 
     swatches.replaceChildren(...state.palette.map((colour) => {
@@ -267,11 +294,12 @@
   // only: secrets never reach this window.
   const connectionsEl = document.getElementById('connections');
 
-  function fillConnections({ types, connections }) {
+  function fillConnections({ types, connections }, openType = null) {
     connectionsEl.replaceChildren(...types.map((type) => window.Fields.connectionType(
       type,
       connections.filter((c) => c.type === type.type),
       {
+        open: type.type === openType,
         onAdd: (values) => window.library.addConnection(type.type, values).then((result) => {
           if (result.ok) fillConnections(result.state);
           return result;
@@ -281,23 +309,24 @@
     )));
   }
 
-  function loadConnections() {
-    return window.library.connections().then(fillConnections);
+  function loadConnections(openType) {
+    return window.library.connections().then((state) => fillConnections(state, openType));
   }
 
-  // A widget's "Connect a calendar…" lands here, on that type's section.
+  // A widget's "Connect a calendar…" lands here: that type's card, with its
+  // add form already open.
   window.library.onShowConnections((type) => {
-    showSettings(true);
-    loadConnections().then(() => {
-      const section = connectionsEl.querySelector(`[data-type="${CSS.escape(type || '')}"]`)
+    showSettings(true, { skipConnections: true });
+    loadConnections(type).then(() => {
+      const card = connectionsEl.querySelector(`[data-type="${CSS.escape(type || '')}"]`)
         || document.getElementById('connections-head');
-      section.scrollIntoView({ block: 'start' });
-      const input = section.querySelector('input');
+      card.scrollIntoView({ block: 'center' });
+      const input = card.querySelector('.conn-add:not([hidden]) input');
       if (input) input.focus();
     });
   });
 
-  function showSettings(show) {
+  function showSettings(show, { skipConnections = false } = {}) {
     const open = show === undefined ? panel.hidden : show;
     // Leaving mid-recording must hand the shortcut back, or it stays dead.
     if (!open && peek.listening) stopListening();
@@ -310,7 +339,7 @@
     document.getElementById('title').textContent = open ? 'Settings' : 'Sticky Notes';
     if (open) {
       window.library.getSettings().then(fillSettings);
-      loadConnections();
+      if (!skipConnections) loadConnections();
     }
   }
 
@@ -331,6 +360,18 @@
   });
   autoShow.addEventListener('change', () => {
     window.library.setSettings({ autoShowAfter: Number(autoShow.value) }).then(fillSettings);
+  });
+  idleOn.addEventListener('change', () => {
+    window.library.setSettings({ autoShowIdle: idleOn.checked }).then(fillSettings);
+  });
+  limitOn.addEventListener('change', () => {
+    window.library.setSettings({ hideLimitOn: limitOn.checked }).then(fillSettings);
+  });
+  limitMinutes.addEventListener('change', () => {
+    window.library.setSettings({ hideLimitMinutes: Number(limitMinutes.value) }).then(fillSettings);
+  });
+  presenting.addEventListener('change', () => {
+    window.library.setSettings({ holdWhilePresenting: presenting.checked }).then(fillSettings);
   });
 
   // --------------------------------------------------------------- actions

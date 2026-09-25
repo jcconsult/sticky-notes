@@ -139,6 +139,9 @@ body {
   stroke-linejoin: round;
 }
 
+/* The gear is drawn on a 24-unit grid; this matches the 16-unit icons' weight. */
+.btn svg.cog { stroke-width: 2; }
+
 .btn[aria-pressed="false"] { opacity: 0.38; }
 .btn[aria-pressed="false"]:hover { opacity: 0.8; }
 

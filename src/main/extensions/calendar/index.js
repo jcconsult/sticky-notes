@@ -28,11 +28,15 @@ const ics = {
   fields: [
     {
       key: 'url', label: 'Calendar link', type: 'url', secret: true,
-      placeholder: 'Paste a calendar link (https:// or webcal://)',
+      placeholder: 'Paste a calendar link',
     },
   ],
-  help: 'Google: Settings → your calendar → Integrate calendar → Secret address in iCal format. '
-    + 'Outlook: Settings → Calendar → Shared calendars → Publish a calendar, with “Can view all details”.',
+  icon: 'calendar',
+  // Folded under "Where do I find the link?" — one line per provider.
+  help: [
+    { label: 'Google', text: 'Settings → your calendar → Integrate calendar → Secret address in iCal format' },
+    { label: 'Outlook', text: 'Settings → Calendar → Shared calendars → Publish a calendar (“Can view all details”) → ICS link' },
+  ],
 
   // Calendar apps hand out webcal:// links; they are plain HTTPS underneath.
   normalise(values) {
