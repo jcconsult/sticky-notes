@@ -364,46 +364,16 @@ kbd {
   letter-spacing: 0.02em;
 }
 
-/* ------------------------------------------------------------ connections */
-
-.conns { margin: 0; padding: 0; list-style: none; }
-
-.conn {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 0;
-}
-
-.conn-name { flex: 1; min-width: 0; font-weight: 600; }
-
-.conn-name small {
-  display: block;
-  overflow: hidden;
+/* Connections are drawn by fields.js; their styles are in fields.css. A
+   section heading groups them, the way each type gets one. */
+.connections-head {
+  margin: 18px 0 0;
   color: var(--muted);
-  font-size: 11.5px;
-  font-weight: 400;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
 }
-
-.conn-add { display: flex; gap: 6px; margin-top: 6px; }
-
-.text-input {
-  flex: 1;
-  min-width: 0;
-  padding: 5px 8px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: var(--chip);
-  color: var(--fg);
-  font: inherit;
-  font-size: 12px;
-}
-
-.text-input:focus-visible { outline: 1px solid var(--fg); outline-offset: 1px; }
-
-.hint.error { color: #e0455f; }
 
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb {

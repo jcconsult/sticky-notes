@@ -19,6 +19,13 @@
   let palette = [];
   let themes = {};
 
+  // The title in the title bar, renamed in place (titlebar.js).
+  const title = window.TitleBar.setup({
+    el: $('title'),
+    placeholder: 'Add title',
+    onSave: (text) => window.notes.update({ title: text }),
+  });
+
   // ------------------------------------------------------------------ state
 
   const save = debounce((patch) => window.notes.update(patch), 250);
@@ -165,7 +172,9 @@
     el.btnColor.setAttribute('aria-expanded', String(open));
   }
 
-  el.btnNew.addEventListener('click', () => window.notes.create());
+  // + offers a note or any widget; Ctrl+N stays the instant new note.
+  el.btnNew.addEventListener('click', () => window.notes.addMenu());
+  window.notes.onTitleEdit(() => title.edit());
   el.btnClose.addEventListener('click', () => window.notes.hide());
   el.btnPin.addEventListener('click', () => setPinned(!note.pinned));
   el.btnMode.addEventListener('click', () => setMode(note.mode === 'edit' ? 'view' : 'edit'));
@@ -286,6 +295,7 @@
   // dropped unless the user had first clicked into the text.
   document.addEventListener('paste', (e) => {
     if (note.mode === 'edit') return; // the textarea handles its own paste
+    if (e.target.closest && e.target.closest('.title-input')) return; // pasting a title
     const text = e.clipboardData && e.clipboardData.getData('text/plain');
     if (!text) return;
     e.preventDefault();
@@ -338,6 +348,7 @@
     buildPalette();
     applyTheme(state.theme);
     applyColor(note.color);
+    title.set(note.title);
     setPinned(note.pinned !== false);
     setMode(note.mode === 'edit' ? 'edit' : 'view', { focus: note.mode === 'edit' });
   });

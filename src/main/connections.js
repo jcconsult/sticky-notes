@@ -1,10 +1,11 @@
-/* Calendar links, kept apart from the notes.
+/* Connections: the accounts extensions contribute — calendar links, API keys.
  *
- * A Google "secret address" or a published Outlook link is a credential:
- * anyone holding it can read the calendar. So links live in their own file,
- * never in notes.json (which people copy between machines), encrypted with
- * Electron's safeStorage — Windows DPAPI, tied to this Windows account. The
- * renderer only ever sees a label and the host.
+ * One store for every connection type, kept apart from the notes. Fields an
+ * extension marks `secret` (a calendar's secret address, an API key) are
+ * credentials, so they are encrypted with Electron's safeStorage (Windows
+ * DPAPI, tied to this Windows account) and live in connections.json — never
+ * in notes.json, which people copy between machines. The renderer only ever
+ * sees a label, a detail line and whether the connection is working.
  *
  * safeStorage works only after the app is ready; every function here is
  * called from IPC handlers or widget refreshes, which are all later.
@@ -21,13 +22,42 @@ function connectionsPath() {
   return file;
 }
 
+function encrypt(values) {
+  return safeStorage.encryptString(JSON.stringify(values)).toString('base64');
+}
+
+function decrypt(secret) {
+  return JSON.parse(safeStorage.decryptString(Buffer.from(secret, 'base64')));
+}
+
+// The first version stored calendar links only, as { calendars: [...] } with
+// the bare URL encrypted. Carried over once, into the general shape.
+function migrate(parsed) {
+  const connections = [];
+  for (const c of parsed.calendars || []) {
+    try {
+      const url = safeStorage.decryptString(Buffer.from(c.secret, 'base64'));
+      connections.push({
+        id: c.id, type: 'ics', label: c.label, detail: c.host,
+        secret: encrypt({ url }), public: {}, health: null,
+      });
+    } catch { /* saved on another machine: cannot carry it over */ }
+  }
+  return { version: 2, connections };
+}
+
 function load() {
   if (data) return data;
   try {
     const parsed = JSON.parse(fs.readFileSync(connectionsPath(), 'utf8').replace(/^﻿/, ''));
-    data = { calendars: Array.isArray(parsed.calendars) ? parsed.calendars : [] };
+    if (Array.isArray(parsed.connections)) {
+      data = { version: 2, connections: parsed.connections };
+    } else {
+      data = migrate(parsed);
+      save();
+    }
   } catch {
-    data = { calendars: [] };
+    data = { version: 2, connections: [] };
   }
   return data;
 }
@@ -40,65 +70,68 @@ function save() {
   fs.renameSync(tmp, target);
 }
 
-// Calendar apps hand out webcal:// links; they are plain HTTPS underneath.
-function normalise(input) {
-  const text = String(input || '').trim().replace(/^webcal:\/\//i, 'https://');
-  let url;
-  try {
-    url = new URL(text);
-  } catch {
-    return null;
-  }
-  return url.protocol === 'https:' ? url : null;
+// What the renderer may see: no secret, no link, no token.
+function list(type) {
+  return load().connections
+    .filter((c) => !type || c.type === type)
+    .map(({ id, type: kind, label, detail, health }) => ({ id, type: kind, label, detail, health }));
 }
 
-function labelFor(host) {
-  if (/(^|\.)google\.com$/i.test(host)) return 'Google Calendar';
-  if (/(^|\.)(outlook\.office365\.com|outlook\.office\.com|outlook\.live\.com)$/i.test(host)) return 'Outlook';
-  return host;
-}
+const exists = (id) => load().connections.some((c) => c.id === id);
 
-// What the renderer may see: no URL, no path, no token.
-function list() {
-  return load().calendars.map(({ id, label, host }) => ({ id, label, host }));
-}
-
-const INVALID = 'That doesn’t look like a calendar link. It should start with https:// or webcal://.';
-
-/** @returns {{ ok: boolean, error?: string }} */
-function addCalendar(input) {
-  const url = normalise(input);
-  if (!url) return { ok: false, error: INVALID };
+/**
+ * @param {string} type
+ * @param {object} secretValues  encrypted at rest
+ * @param {object} publicValues  stored as-is
+ * @param {{label: string, detail?: string}} names
+ */
+function add(type, secretValues, publicValues, names) {
   if (!safeStorage.isEncryptionAvailable()) {
-    return { ok: false, error: 'Windows can’t encrypt the link on this account, so it was not saved.' };
+    throw new Error('Windows can’t encrypt secrets on this account, so nothing was saved.');
   }
-  const calendars = load().calendars;
-  const secret = safeStorage.encryptString(url.href).toString('base64');
-  const id = `c${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
-  calendars.push({ id, label: labelFor(url.hostname), host: url.hostname, secret });
+  const id = `k${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
+  load().connections.push({
+    id, type,
+    label: names.label,
+    detail: names.detail || '',
+    secret: encrypt(secretValues),
+    public: publicValues,
+    health: { ok: true, message: null, at: Date.now() },
+  });
   save();
-  return { ok: true };
+  return id;
 }
 
-function removeCalendar(id) {
+function remove(id) {
   const d = load();
-  d.calendars = d.calendars.filter((c) => c.id !== id);
+  d.connections = d.connections.filter((c) => c.id !== id);
   save();
 }
 
-// Main process only. A link encrypted on another machine or account cannot
-// be read here; it is skipped and reported, not fatal.
-function calendarUrls() {
-  const urls = [];
-  let unreadable = 0;
-  for (const c of load().calendars) {
+// Main process only: a type's connections with their values decrypted. One
+// encrypted on another machine or account can't be read here; it is marked
+// unhealthy and skipped, not fatal.
+function values(type) {
+  const out = [];
+  for (const c of load().connections.filter((x) => x.type === type)) {
     try {
-      urls.push({ label: c.label, url: safeStorage.decryptString(Buffer.from(c.secret, 'base64')) });
+      out.push({ id: c.id, label: c.label, values: { ...c.public, ...decrypt(c.secret) } });
     } catch {
-      unreadable += 1;
+      report(c.id, 'saved on another PC — remove it and add it again');
     }
   }
-  return { urls, unreadable };
+  return out;
 }
 
-module.exports = { list, addCalendar, removeCalendar, calendarUrls, normalise, INVALID };
+// Health is whatever the last use found. Written only when it changes, so a
+// working calendar refreshing every five minutes never touches the disk.
+function report(id, error) {
+  const c = load().connections.find((x) => x.id === id);
+  if (!c) return;
+  const ok = !error;
+  if (c.health && c.health.ok === ok && c.health.message === (error || null)) return;
+  c.health = { ok, message: error || null, at: Date.now() };
+  save();
+}
+
+module.exports = { list, exists, add, remove, values, report };

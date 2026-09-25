@@ -9,7 +9,7 @@
   const $ = (id) => document.getElementById(id);
   const el = {
     bar: $('bar'),
-    label: $('label'),
+    title: $('title'),
     preview: $('preview'),
     settings: $('settings'),
     palette: $('palette'),
@@ -27,6 +27,7 @@
   let last = null;    // last widget:update payload
   let themes = {};
   let palette = [];
+  let title = null;   // titlebar.js, once the widget's name is known
 
   // ---------------------------------------------------------------- content
 
@@ -97,46 +98,27 @@
     if (open) buildSettings();
   }
 
-  // The widget describes its settings; the form is drawn here, the same way
-  // for every widget.
+  // The widget describes its settings; fields.js draws them, the same way as
+  // Settings → Connections.
   function buildSettings() {
-    const fields = state.schema.map((field) => {
-      const row = document.createElement('div');
-      row.className = `field ${field.type}`;
-      const label = document.createElement('span');
-      label.className = 'field-label';
-      label.textContent = field.label;
-
-      if (field.type === 'toggle') {
-        const input = document.createElement('input');
-        input.type = 'checkbox';
-        input.checked = !!state.settings[field.key];
-        input.setAttribute('aria-label', field.label);
-        input.addEventListener('change', () => change(field.key, input.checked));
-        row.append(label, input);
-        return row;
-      }
-
-      const choices = document.createElement('div');
-      choices.className = 'choices';
-      choices.setAttribute('role', 'radiogroup');
-      choices.setAttribute('aria-label', field.label);
-      for (const [value, text] of field.options) {
-        const button = document.createElement('button');
-        button.textContent = text;
-        button.setAttribute('role', 'radio');
-        button.setAttribute('aria-checked', String(state.settings[field.key] === value));
-        button.addEventListener('click', () => change(field.key, value));
-        choices.append(button);
-      }
-      row.append(label, choices);
-      return row;
+    const fields = window.Fields.settings(state.schema, state.settings, {
+      onChange: change,
+      onManage: (type) => window.widget.manage(type),
     });
-
     const hint = document.createElement('p');
     hint.className = 'settings-hint';
-    hint.textContent = 'Changes apply straight away. Accounts and calendar links live in All Notes → Settings.';
+    hint.textContent = 'Changes apply straight away. Accounts and links are set up once, in All Notes → Settings → Connections.';
     el.settings.replaceChildren(...fields, hint);
+  }
+
+  // Connections were added or removed elsewhere: the checklist must match.
+  function reloadForm() {
+    window.widget.form().then((form) => {
+      if (!form) return;
+      state.schema = form.schema;
+      state.settings = form.settings;
+      if (!el.settings.hidden) buildSettings();
+    });
   }
 
   function change(key, value) {
@@ -195,7 +177,8 @@
 
   // ----------------------------------------------------------------- wiring
 
-  el.btnNew.addEventListener('click', () => window.widget.create());
+  // + offers a note or any widget; Ctrl+N stays the instant new note.
+  el.btnNew.addEventListener('click', () => window.widget.addMenu());
   el.btnClose.addEventListener('click', () => window.widget.hide());
   el.btnSettings.addEventListener('click', () => showSettings(el.settings.hidden));
   el.btnPin.addEventListener('click', () => {
@@ -242,6 +225,8 @@
 
   window.widget.onUpdate(render);
   window.widget.onSettings(() => showSettings(true));
+  window.widget.onFormChanged(reloadForm);
+  window.widget.onTitleEdit(() => title && title.edit());
   window.widget.onTheme(applyTheme);
 
   // ------------------------------------------------------------------ start
@@ -251,12 +236,24 @@
     state = initial;
     themes = initial.themes;
     palette = initial.palette;
-    el.label.textContent = initial.name;
-    document.title = initial.name;
+    // Renamed, the widget keeps its title; cleared, it goes back to its name.
+    title = window.TitleBar.setup({
+      el: el.title,
+      placeholder: initial.name,
+      fallback: initial.name,
+      onSave: (text) => {
+        document.title = text || initial.name;
+        window.widget.setTitle(text);
+      },
+    });
+    title.set(initial.title);
+    document.title = initial.title || initial.name;
     buildPalette();
     applyTheme(initial.theme);
     applyColor(initial.color);
     setPinned(initial.pinned !== false);
     if (initial.update) render(initial.update);
+    // A new widget opens on its settings: choosing what it shows comes first.
+    if (initial.openSettings) showSettings(true);
   });
 })();

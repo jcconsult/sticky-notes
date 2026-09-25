@@ -8,7 +8,7 @@ const {
 const store = require('./store');
 const { createHider } = require('./hide');
 const connections = require('./connections');
-const widgets = require('./widgets');
+const registry = require('./widgets/registry');
 const { createRuntime } = require('./widgets/runtime');
 const { PALETTE, THEMES, DEFAULT_COLOR, colorOf } = require('../shared/palette');
 
@@ -53,9 +53,14 @@ const NOTE_MIN = { width: 240, height: 180 };
 const NOTE_DEFAULT = { width: 340, height: 380 };
 const WIDGET_DEFAULT = { width: 320, height: 440 };
 
-// A calendar feed is text; anything bigger than this is not one worth reading.
-const FEED_MAX_BYTES = 5 * 1024 * 1024;
-const FEED_TIMEOUT_MS = 20 * 1000;
+// Win32: a double-click in a window's non-client area, and the hit-test code
+// for a caption (title bar).
+const WM_NCLBUTTONDBLCLK = 0x00a3;
+const HTCAPTION = 2;
+
+// Limits on anything a widget or connection check fetches (host.fetch).
+const FETCH_MAX_BYTES = 5 * 1024 * 1024;
+const FETCH_TIMEOUT_MS = 20 * 1000;
 const LIBRARY_DEFAULT = { width: 340, height: 520 };
 
 const WELCOME = `# Welcome
@@ -215,10 +220,19 @@ function clamp(text, max) {
   return text.length > max ? `${text.slice(0, max - 1)}…` : text;
 }
 
-// A widget's first line changes every refresh; it is known by its fixed name.
+const TITLE_MAX = 80;
+
+function cleanTitle(value) {
+  return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, TITLE_MAX) : '';
+}
+
+// A title set in the title bar wins everywhere a note is named. Without one,
+// a note is known by its first line; a widget, whose first line changes every
+// refresh, by its type's name.
 function noteTitle(note) {
+  if (note.title) return note.title;
   if (note.widget) {
-    const def = widgets.definition(note.widget.type);
+    const def = registry.widget(note.widget.type);
     return def ? def.name : 'Widget';
   }
   const [first] = plainLines(note.markdown);
@@ -227,7 +241,8 @@ function noteTitle(note) {
 
 function noteSnippet(note) {
   if (note.widget) return clamp(runtime.summary(note.id) || '', 70);
-  return clamp(plainLines(note.markdown).slice(1).join(' '), 70);
+  // With a title, the first line is content again, not the name.
+  return clamp(plainLines(note.markdown).slice(note.title ? 0 : 1).join(' '), 70);
 }
 
 function summarise() {
@@ -283,6 +298,10 @@ function createNoteWindow(note) {
     frame: false,
     show: false,
     skipTaskbar: true, // eight notes should not mean eight taskbar buttons
+    // A note is never meant to fill the screen, and double-clicking its
+    // title bar renames it (below) rather than maximising it.
+    maximizable: false,
+    fullscreenable: false,
     backgroundColor: theme().bg,
     webPreferences: {
       preload: path.join(__dirname, `../preload/${isWidget ? 'preload-widget' : 'preload'}.js`),
@@ -295,6 +314,15 @@ function createNoteWindow(note) {
   windows.set(note.id, win);
   win.loadFile(path.join(__dirname, `../renderer/${isWidget ? 'widget' : 'note'}.html`), { query: { id: note.id } });
   if (isWidget) runtime.start(note.id);
+
+  // The empty part of the title bar is a drag region, which the page never
+  // sees clicks in — Windows does, as a double-click on the caption. That
+  // becomes "rename", the same as double-clicking the title itself.
+  if (process.platform === 'win32') {
+    win.hookWindowMessage(WM_NCLBUTTONDBLCLK, (wParam) => {
+      if (wParam.readUInt32LE(0) === HTCAPTION) win.webContents.send('title:edit');
+    });
+  }
 
   win.once('ready-to-show', () => {
     applyPin(win, note.pinned);
@@ -383,19 +411,44 @@ function hideNote(id) {
   notifyChanged();
 }
 
+// Widgets that should open on their settings the first time their window
+// asks for its state: new ones, so choosing what they show is the first step.
+const openOnSettings = new Set();
+
 function newWidget(type) {
-  const def = widgets.definition(type);
+  const def = registry.widget(type);
   if (!def) return null;
   hider.reset();
   const note = store.create({
-    widget: { type, settings: widgets.defaults(type) },
+    widget: { type, settings: registry.defaults(type) },
     color: def.color,
     pinned: settings().newNotesPinned,
     mode: 'view', // a widget has no source to open in
   });
+  openOnSettings.add(note.id);
   createNoteWindow(note);
   notifyChanged();
   return note;
+}
+
+// Duplicate widget: same type, settings, colour and title — a second view
+// that differs only where the user then changes it. Placed just below and
+// to the right of the original, so the two don't stack exactly.
+function duplicateWidget(id) {
+  const source = store.get(id);
+  if (!source || !source.widget) return;
+  const win = windows.get(id);
+  const bounds = win && !win.isDestroyed() ? win.getNormalBounds() : source.bounds;
+  const note = store.create({
+    widget: { type: source.widget.type, settings: { ...source.widget.settings } },
+    title: source.title || undefined,
+    color: source.color,
+    pinned: source.pinned,
+    mode: 'view',
+    bounds: bounds ? { ...bounds, x: bounds.x + 28, y: bounds.y + 28 } : null,
+  });
+  createNoteWindow(note);
+  notifyChanged();
 }
 
 // Copy to note: the widget's text as an ordinary note, frozen. Its sticky://
@@ -405,13 +458,23 @@ function copyWidgetToNote(id) {
   const markdown = runtime.markdown(id)
     .replace(/\[((?:\\.|[^\]\\])*)\]\(sticky:\/\/[^)]*\)/g, '$1');
   const note = store.create({
-    markdown: `# ${noteTitle(source)} · ${new Date().toLocaleDateString()}\n\n${markdown}`,
+    title: `${noteTitle(source)} · ${new Date().toLocaleDateString()}`,
+    markdown,
     color: source.color,
     pinned: settings().newNotesPinned,
     mode: 'view',
   });
   createNoteWindow(note);
   notifyChanged();
+}
+
+// The + button in any window: a new note first, then every widget type.
+function addMenu(win, nearId) {
+  Menu.buildFromTemplate([
+    { label: 'New note', accelerator: 'CommandOrControl+N', registerAccelerator: false, click: () => newNote(nearId) },
+    { type: 'separator' },
+    ...registry.widgetList().map(({ type, name }) => ({ label: `New ${name}`, click: () => newWidget(type) })),
+  ]).popup({ window: win });
 }
 
 function newNote(nearId) {
@@ -603,7 +666,7 @@ function refreshTray() {
     { label: 'New note', click: () => newNote() },
     {
       label: 'New widget',
-      submenu: widgets.types().map(({ type, name }) => ({ label: name, click: () => newWidget(type) })),
+      submenu: registry.widgetList().map(({ type, name }) => ({ label: name, click: () => newWidget(type) })),
     },
     {
       label: `${hidden ? 'Show' : 'Hide'} notes`,
@@ -694,10 +757,7 @@ const HTTP_REASONS = {
 async function fetchText(url) {
   let response;
   try {
-    response = await net.fetch(url, {
-      signal: AbortSignal.timeout(FEED_TIMEOUT_MS),
-      headers: { accept: 'text/calendar, text/plain;q=0.9, */*;q=0.1' },
-    });
+    response = await net.fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
   } catch (err) {
     throw new Error(err && err.name === 'TimeoutError' ? 'timed out' : 'no connection');
   }
@@ -706,31 +766,10 @@ async function fetchText(url) {
     error.status = response.status;
     throw error;
   }
-  if (Number(response.headers.get('content-length') || 0) > FEED_MAX_BYTES) throw new Error('too large');
+  if (Number(response.headers.get('content-length') || 0) > FETCH_MAX_BYTES) throw new Error('too large');
   const text = await response.text();
-  if (text.length > FEED_MAX_BYTES) throw new Error('too large');
+  if (text.length > FETCH_MAX_BYTES) throw new Error('too large');
   return text;
-}
-
-// Checked when a link is added, so a link that cannot work is refused where
-// it was pasted, with a reason — not saved and left to fail in a widget.
-async function checkCalendar(url) {
-  try {
-    const text = await fetchText(url);
-    if (!/^﻿?\s*BEGIN:VCALENDAR/i.test(text)) {
-      return 'That link opens a web page, not a calendar. Copy the iCal (ICS) address instead.';
-    }
-    return null;
-  } catch (err) {
-    const parsed = new URL(url);
-    if (err.status === 404 && /google\.com$/i.test(parsed.hostname) && parsed.pathname.includes('/public/')) {
-      return 'Google says that link doesn’t exist: it is the calendar’s public address, which only works for calendars shared with everyone. Use “Secret address in iCal format” instead.';
-    }
-    if (err.status === 404 || err.status === 410) {
-      return `The calendar didn’t accept that link (${err.message}). Copy it again from the calendar’s settings.`;
-    }
-    return `Couldn’t read that calendar: ${err.message}.`;
-  }
 }
 
 const runtime = createRuntime({
@@ -739,23 +778,39 @@ const runtime = createRuntime({
     const win = windows.get(id);
     if (win && !win.isDestroyed()) win.webContents.send('widget:update', payload);
   },
-  ctx: { calendars: () => connections.calendarUrls(), fetchText },
+  store: connections,
+  fetchText,
   onSummary: () => notifyChanged(),
 });
 
-// A command behind a widget link, as opposed to a URL.
-function runCommand(command) {
-  if (command === 'connections') showConnections();
+// A command behind a widget link, as opposed to a URL. Both are framework
+// commands; extensions can point at them but not add their own.
+function runCommand(target, widgetId) {
+  if (target.command === 'connections') showConnections(target.type);
+  if (target.command === 'settings') {
+    const win = windows.get(widgetId);
+    if (win && !win.isDestroyed()) win.webContents.send('widget:showSettings');
+  }
 }
 
-function showConnections() {
+// Settings → Connections, scrolled to one connection type's section.
+function showConnections(type) {
   showLibrary();
   if (library && !library.isDestroyed()) {
-    const send = () => library.webContents.send('library:showConnections');
+    const send = () => library.webContents.send('library:showConnections', type || null);
     if (library.webContents.isLoading()) library.webContents.once('did-finish-load', send);
     else send();
   }
 }
+
+// What Settings → Connections draws: every type extensions contribute, and
+// every connection by label, detail and health — never a secret.
+function connectionsState() {
+  return { types: registry.connectionList(), connections: connections.list() };
+}
+
+// The host a connection type's check() gets: the network, nothing else.
+const checkHost = { fetch: fetchText };
 
 // ---------------------------------------------------------------------------
 // IPC — note windows
@@ -770,14 +825,23 @@ ipcMain.handle('note:get', (event) => {
 ipcMain.handle('note:update', (event, patch) => {
   const id = ownerId(event);
   if (!id) return;
-  // A widget's text is written by the app; its window may only change colour.
-  const keys = store.get(id)?.widget ? ['color'] : ['markdown', 'color', 'mode'];
+  // A widget's text is written by the app; its window may only change its
+  // colour and its title.
+  const keys = store.get(id)?.widget ? ['color', 'title'] : ['markdown', 'color', 'mode', 'title'];
   const allowed = {};
   for (const key of keys) {
     if (key in patch) allowed[key] = patch[key];
   }
+  if ('title' in allowed) allowed.title = cleanTitle(allowed.title);
   store.update(id, allowed);
-  if ('markdown' in allowed || 'color' in allowed) notifyChanged();
+  if ('markdown' in allowed || 'color' in allowed || 'title' in allowed) notifyChanged();
+});
+
+// The + button in the title bar: new note, or any widget type.
+ipcMain.handle('note:addMenu', (event) => {
+  const id = ownerId(event);
+  const win = id && windows.get(id);
+  if (win && !win.isDestroyed()) addMenu(win, id);
 });
 
 ipcMain.handle('note:setPinned', (event, pinned) => {
@@ -803,11 +867,12 @@ ipcMain.handle('note:menu', (event) => {
   const note = store.get(id);
 
   Menu.buildFromTemplate([
+    { label: 'Rename…', click: () => win.webContents.send('title:edit') },
     { label: 'New note', click: () => newNote(id) },
     {
       label: 'Duplicate note',
       click: () => {
-        createNoteWindow(store.create({ markdown: note.markdown, color: note.color }));
+        createNoteWindow(store.create({ markdown: note.markdown, color: note.color, title: note.title || undefined }));
         notifyChanged();
       },
     },
@@ -827,18 +892,29 @@ ipcMain.handle('open-external', (_event, url) => openExternal(url));
 function widgetOf(event) {
   const id = ownerId(event);
   const note = id ? store.get(id) : null;
-  return note && note.widget ? { id, note, def: widgets.definition(note.widget.type) } : null;
+  return note && note.widget ? { id, note, def: registry.widget(note.widget.type) } : null;
+}
+
+// The settings form: the schema with each connections field's options filled
+// in from what is connected now, and the settings cleaned against it.
+function widgetForm(w) {
+  return {
+    schema: registry.schema(w.def.type, (type) => connections.list(type)),
+    settings: registry.clean(w.def.type, w.note.widget.settings, connections.exists),
+  };
 }
 
 ipcMain.handle('widget:get', (event) => {
   const w = widgetOf(event);
   if (!w || !w.def) return null;
+  const openSettings = openOnSettings.delete(w.id);
   return {
     name: w.def.name,
+    title: w.note.title || '',
     color: w.note.color,
     pinned: w.note.pinned,
-    schema: widgets.schema(w.def.type),
-    settings: widgets.clean(w.def.type, w.note.widget.settings),
+    ...widgetForm(w),
+    openSettings,
     update: runtime.payload(w.id),
     theme: themeName(),
     themes: THEMES,
@@ -846,14 +922,28 @@ ipcMain.handle('widget:get', (event) => {
   };
 });
 
+ipcMain.handle('widget:form', (event) => {
+  const w = widgetOf(event);
+  return w && w.def ? widgetForm(w) : null;
+});
+
 // Settings come back through the same rules as defaults, so a widget only
-// ever sees values its schema allows.
+// ever sees values its schema allows. A change to which connections it
+// shows means refetching; anything else only redraws.
 ipcMain.handle('widget:setSettings', (event, patch) => {
   const w = widgetOf(event);
   if (!w || !w.def) return null;
-  const next = widgets.clean(w.def.type, { ...w.note.widget.settings, ...patch });
+  const before = registry.clean(w.def.type, w.note.widget.settings, connections.exists);
+  const next = registry.clean(w.def.type, { ...before, ...patch }, connections.exists);
   store.update(w.id, { widget: { ...w.note.widget, settings: next } });
-  runtime.render(w.id);
+  const refetch = w.def.settings.some((f) => f.type === 'connections'
+    && JSON.stringify(before[f.key]) !== JSON.stringify(next[f.key]));
+  if (refetch) {
+    runtime.reset(w.id);
+    runtime.refresh(w.id);
+  } else {
+    runtime.render(w.id);
+  }
   return next;
 });
 
@@ -870,8 +960,10 @@ ipcMain.handle('widget:action', (event, actionId) => {
   const target = w && typeof actionId === 'string' ? runtime.action(w.id, actionId) : null;
   if (!target) return;
   if (target.url) openExternal(target.url);
-  else if (target.command) runCommand(target.command);
+  else if (target.command) runCommand(target, w.id);
 });
+
+ipcMain.handle('widget:manage', (_event, type) => showConnections(type));
 
 ipcMain.handle('widget:menu', (event) => {
   const w = widgetOf(event);
@@ -879,7 +971,10 @@ ipcMain.handle('widget:menu', (event) => {
   if (!win || win.isDestroyed()) return;
   Menu.buildFromTemplate([
     { label: 'Widget settings…', click: () => win.webContents.send('widget:showSettings') },
+    { label: 'Rename…', click: () => win.webContents.send('title:edit') },
     { label: 'Refresh now', click: () => runtime.refresh(w.id) },
+    { type: 'separator' },
+    { label: 'Duplicate widget', click: () => duplicateWidget(w.id) },
     { label: 'Copy to note', click: () => copyWidgetToNote(w.id) },
     { type: 'separator' },
     { label: 'All notes…', click: showLibrary },
@@ -907,33 +1002,72 @@ ipcMain.handle('library:delete', (_event, id) => confirmDelete(library, id));
 
 ipcMain.handle('library:new', () => newNote());
 
-// One entry point for widgets: a menu of the types there are.
+// All Notes' New widget button: a menu of the types extensions contribute.
 ipcMain.handle('library:newWidget', () => {
   if (!library || library.isDestroyed()) return;
-  Menu.buildFromTemplate(widgets.types().map(({ type, name }) => ({
+  Menu.buildFromTemplate(registry.widgetList().map(({ type, name }) => ({
     label: name,
     click: () => newWidget(type),
   }))).popup({ window: library });
 });
 
-// Calendar links: the renderer sees labels and hosts, never the links.
-ipcMain.handle('connections:list', () => connections.list());
+// --------------------------------------------------------------- connections
 
-ipcMain.handle('connections:add', async (_event, input) => {
-  const url = connections.normalise(input);
-  if (!url) return { ok: false, error: connections.INVALID, calendars: connections.list() };
-  const problem = await checkCalendar(url.href);
-  if (problem) return { ok: false, error: problem, calendars: connections.list() };
-  const result = connections.addCalendar(url.href);
-  // What widgets showed was true of the old set of calendars; start over.
-  if (result.ok) runtime.refreshAll({ reset: true });
-  return { ...result, calendars: connections.list() };
+// What widgets showed was true of the old set of connections: refetch, and
+// let any open settings form redraw its checklist.
+function connectionsChanged() {
+  runtime.refreshAll({ reset: true });
+  for (const [id, win] of windows) {
+    if (store.get(id)?.widget && !win.isDestroyed()) win.webContents.send('widget:formChanged');
+  }
+}
+
+ipcMain.handle('connections:state', () => connectionsState());
+
+// Add a connection of any contributed type. The type's own check() tests it
+// and names it; only then is it stored, with the fields the type marks
+// secret encrypted.
+ipcMain.handle('connections:add', async (_event, type, input) => {
+  const def = registry.connection(type);
+  if (!def || !input || typeof input !== 'object') return { ok: false, error: 'Unknown connection type.' };
+  const given = Object.fromEntries(def.fields.map((f) => [f.key, String(input[f.key] || '').trim()]));
+  const values = def.normalise ? def.normalise(given) : given;
+  let names;
+  try {
+    names = await def.check(values, checkHost);
+  } catch (err) {
+    return { ok: false, error: (err && err.message) || `That ${def.noun} didn’t work.` };
+  }
+  const secret = {};
+  const plain = {};
+  for (const field of def.fields) (field.secret ? secret : plain)[field.key] = values[field.key];
+  try {
+    connections.add(type, secret, plain, names);
+  } catch (err) {
+    return { ok: false, error: err.message };
+  }
+  connectionsChanged();
+  return { ok: true, state: connectionsState() };
 });
 
-ipcMain.handle('connections:remove', (_event, id) => {
-  connections.removeCalendar(id);
-  runtime.refreshAll({ reset: true });
-  return connections.list();
+// Removing a connection affects every widget that uses it, so it asks first.
+ipcMain.handle('connections:remove', async (_event, id) => {
+  const target = connections.list().find((c) => c.id === id);
+  if (!target) return connectionsState();
+  const def = registry.connection(target.type);
+  const { response } = await dialog.showMessageBox(library, {
+    type: 'warning',
+    buttons: ['Remove', 'Cancel'],
+    defaultId: 1,
+    cancelId: 1,
+    title: `Remove ${def ? def.noun : 'connection'}`,
+    message: `Remove “${target.label}”?`,
+    detail: 'Every widget using it stops showing it. You can add it again later.',
+  });
+  if (response !== 0) return null;
+  connections.remove(id);
+  connectionsChanged();
+  return connectionsState();
 });
 
 let peekOk = true;

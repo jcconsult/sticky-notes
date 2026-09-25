@@ -133,19 +133,34 @@ pressing **B** on bold text unbolds it.
 To format a word you can see in the rendered view, double-click it — that opens
 the source with the word selected and the toolbar up, ready for `Ctrl+B`.
 
+### Titles
+
+Every note and widget can have a title in its title bar. **Double-click the
+title bar** (or right-click → *Rename…*) to set or change it: `Enter` saves,
+`Esc` cancels, and clearing it goes back to the default. A note with no title
+shows a faint *Add title*; a widget shows its type's name until you rename it.
+The title is what All Notes and the tray list the note by.
+
 ### Widgets
 
-**All Notes → New widget** (or the tray's *New widget* menu) adds one. A widget
-looks and behaves like a note — colour, pin, transparency, `F1` — but its text
-is written by the app, so it cannot be edited:
+The **+** in any note or widget offers a new note or any widget type (`Ctrl+N`
+is still an instant new note); All Notes and the tray have *New widget* too. A
+widget looks and behaves like a note — colour, pin, transparency, title, `F1` —
+but its text is written by the app, so it cannot be edited:
 
-- the **⚙ gear** swaps the content for the widget's settings;
+- a new widget opens on its **settings** — the ⚙ gear brings them back — where
+  you choose what it shows, such as which calendars;
 - the **footer** says how fresh it is; click it to refresh now;
-- **right-click** for settings, refresh, **Copy to note** (a frozen, editable
-  copy), close and delete.
+- **right-click** for settings, rename, refresh, **Duplicate widget** (same
+  settings, to change one thing), **Copy to note** (a frozen, editable copy),
+  close and delete.
 
-**Agenda** needs a calendar link, added in **All Notes → Settings →
-Calendars** (the widget's *Add a calendar link…* takes you there):
+**Accounts are set up once, in All Notes → Settings → Connections**, and every
+widget picks from them — several Agendas can share calendars, each showing its
+own selection. A calendar added later appears in every Agenda until you untick
+it there. Each connection shows whether it is working.
+
+**Agenda** needs a calendar link:
 
 | Calendar | Where the link is |
 | --- | --- |
@@ -153,8 +168,9 @@ Calendars** (the widget's *Add a calendar link…* takes you there):
 | Outlook | Settings → **Calendar → Shared calendars → Publish a calendar**, with *Can view all details* → the ICS link |
 
 Each link is checked when you add it and refused, with the reason, if it does
-not work. Google's *public* address only works for calendars shared with
-everyone — use the secret one. Links are stored encrypted for your Windows
+not work, and the calendar is listed under its own name (*Work*, *Family*).
+Google's *public* address only works for calendars shared with everyone — use
+the secret one. Links are stored encrypted for your Windows
 account in `%APPDATA%\sticky-notes\connections.json`, never in `notes.json`,
 so a copied notes file carries no calendar access. Agenda refreshes every five
 minutes, when Windows wakes or unlocks, and at midnight.
@@ -189,7 +205,7 @@ written. `npm run dev:reset` discards that copy (quit the dev app first).
 | `npm run dev:reset` | Throw the dev copy away; the next `dev` run copies your notes again |
 | `npm start` | Run the checkout as the real app, on your real notes (quit the installed one first) |
 | `npm run check` | Parse every source file |
-| `npm test` | Run the formatting, hide-shortcut and widget tests |
+| `npm test` | Run the formatting, hide-shortcut, widget and extension-contract tests |
 | `npm run pack:dir` | Package to `dist/win-unpacked` without an installer |
 | `npm run dist` | Build the installer into `dist/` |
 
@@ -199,17 +215,19 @@ written. `npm run dev:reset` discards that copy (quit the dev app first).
 src/main/main.js          windows, tray, settings — all OS-facing behaviour
 src/main/store.js         the JSON file, debounced and written atomically
 src/main/hide.js          the hide shortcut: tap, hold and idle return
-src/main/connections.js   calendar links, encrypted with safeStorage
-src/main/widgets/         the widget framework and the Agenda widget
-  index.js                  registry: definitions and their settings rules
-  runtime.js                fetch schedule, minute redraw, action tables
+src/main/connections.js   accounts of every type; secret fields encrypted
+src/main/widgets/         the widget framework — knows no integration
+  registry.js               what extensions contribute, and the settings rules
+  runtime.js                fetch schedule, minute redraw, host, action tables
   format.js                 rows → Markdown; the one place widgets are styled
-  agenda.js                 Agenda: settings, fetch, view
-  agenda-view.js            events → rows for a given moment (pure)
-  ics.js                    iCalendar → events (ical.js)
+src/main/extensions/      integrations, one folder each
+  index.js                  the list of built-in extensions
+  calendar/                 calendar links (connection) + Agenda (widget)
 src/preload/              the IPC bridges: a note, a widget, and All Notes
 src/renderer/note.js      one note window
-src/renderer/widget.js    one widget window: content, settings form, footer
+src/renderer/widget.js    one widget window: content, settings, footer
+src/renderer/fields.js    forms drawn from schemas: widget settings, Connections
+src/renderer/titlebar.js  the title in the title bar, renamed in place
 src/renderer/markdown.js  markdown-it plus the checkbox/source round-trip
 src/renderer/format.js    Markdown formatting operations on the textarea
 src/renderer/library.js   the All Notes list and Settings
@@ -222,11 +240,42 @@ Electron. `markdown-it` is vendored into `src/vendor/` at install time so the
 sandboxed renderer can load it as a script; `ical.js` (Mozilla's iCalendar
 parser) is the one dependency the main process loads from `node_modules`.
 
-**Adding a widget** means one definition in `src/main/widgets/` — its settings
-(as a list the framework draws and validates), `fetch(settings, ctx)` for the
-slow part and a pure `view(data, settings, now)` returning rows — registered in
-`widgets/index.js`. A widget never writes Markdown or builds UI, which is what
-keeps every widget looking the same.
+#### Adding an integration
+
+An integration is one folder in `src/main/extensions/`, listed in
+`extensions/index.js`, exporting a manifest that contributes two kinds of
+thing:
+
+```js
+module.exports = {
+  id: 'calendar', name: 'Calendar',
+  connections: [{                  // accounts → Settings → Connections
+    type: 'ics', name: 'Calendars', noun: 'calendar', multiple: true,
+    fields: [{ key: 'url', label: 'Calendar link', type: 'url', secret: true }],
+    check: async (values, host) => ({ label, detail }),   // test it, name it
+  }],
+  widgets: [{                      // widget types → the + menu
+    type: 'agenda', name: 'Agenda', color: 'blue', uses: ['ics'], refreshMinutes: 5,
+    settings: [{ key: 'calendars', label: 'Calendars', type: 'connections', of: 'ics' }],
+    fetch: async (settings, host) => data,
+    view: (data, settings, now) => ({ sections: [/* rows */], summary }),
+  }],
+};
+```
+
+The framework does the rest: it draws Settings → Connections from
+`connections`, draws each widget's settings from `settings` and validates every
+value, shows *nothing connected* / *nothing selected* / *couldn't load* the
+same way for every widget, and formats `view`'s rows into Markdown. Extensions
+never build UI or write Markdown — that is what keeps every widget consistent.
+
+A widget touches the world only through `host`: `host.fetch(url)`,
+`host.connections(type)` (only the connections it has ticked, decrypted) and
+`host.report(id, error)` (a connection's health). Built-in widgets use exactly
+this contract, and `test/extensions.test.js` checks every extension against
+it. That is also the boundary third-party widgets would need — though loading
+them is not built: code in the main process can reach everything, so it would
+need a sandboxed process first.
 
 ### Details worth knowing
 

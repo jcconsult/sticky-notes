@@ -8,21 +8,7 @@
 
 /* ------------------------------------------------------------- title bar */
 
-/* Notes are named by their first line; a widget's first line changes every
-   refresh, so it carries a fixed name in the bar instead. */
-.grip { display: flex; align-items: center; min-width: 0; }
-
-.label {
-  padding-left: 11px;
-  overflow: hidden;
-  color: #fff;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.01em;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-  opacity: 0.9;
-}
+/* The title (note.css) shows the widget's name until it is renamed. */
 
 .btn[aria-pressed="true"]#btn-settings { opacity: 1; background: rgba(255, 255, 255, 0.2); }
 
@@ -110,32 +96,7 @@ body.widget .markdown li:has(> s) code.lead { opacity: 0.7; }
 
 .widget-settings[hidden] { display: none; }
 
-.field { padding: 10px 0; border-bottom: 1px solid var(--line); }
-.field:last-child { border-bottom: 0; }
-
-.field-label { display: block; margin-bottom: 7px; font-weight: 600; }
-
-.choices { display: flex; flex-wrap: wrap; gap: 4px; }
-
-.choices button {
-  padding: 4px 10px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--fg);
-  font: inherit;
-  font-size: 12.5px;
-  cursor: default;
-  transition: background-color 110ms linear;
-}
-
-.choices button:hover { background: var(--chip); }
-.choices button[aria-checked="true"] { border-color: var(--dot); background: var(--chip); }
-.choices button:focus-visible { outline: 1px solid var(--fg); outline-offset: 1px; }
-
-.field.toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.field.toggle .field-label { margin: 0; }
-.field.toggle input { width: 15px; height: 15px; margin: 0; accent-color: var(--dot); }
+/* The fields themselves are drawn by fields.js and styled in fields.css. */
 
 .settings-hint { margin: 12px 0 0; color: var(--muted); font-size: 11.5px; line-height: 1.45; }
 

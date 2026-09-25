@@ -9,9 +9,9 @@
 </head>
 <body>
   <header id="bar" class="bar">
-    <div class="grip"></div>
+    <div class="grip"><span id="title" class="title"></span></div>
     <div class="actions">
-      <button id="btn-new" class="btn" title="New note (Ctrl+N)" aria-label="New note">
+      <button id="btn-new" class="btn" title="New note or widget" aria-label="New note or widget">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>
       </button>
       <button id="btn-color" class="btn" title="Note colour" aria-label="Note colour" aria-expanded="false">
@@ -58,6 +58,7 @@
   <script src="../vendor/markdown-it.min.js"></script>
   <script src="markdown.js"></script>
   <script src="format.js"></script>
+  <script src="titlebar.js"></script>
   <script src="note.js"></script>
 </body>
 </html>

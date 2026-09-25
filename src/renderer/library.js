@@ -260,67 +260,41 @@
     }));
   }
 
-  // ----------------------------------------------------------- calendars
+  // --------------------------------------------------------- connections
 
-  const calendars = document.getElementById('calendars');
-  const calendarUrl = document.getElementById('calendar-url');
-  const calendarAdd = document.getElementById('calendar-add');
-  const calendarHint = document.getElementById('calendar-hint');
-  const CALENDAR_HINT = calendarHint.textContent;
+  // One section per connection type any extension contributes, drawn by the
+  // same fields.js that draws widget settings. Labels, details and health
+  // only: secrets never reach this window.
+  const connectionsEl = document.getElementById('connections');
 
-  function hint(text, error = false) {
-    calendarHint.textContent = text;
-    calendarHint.classList.toggle('error', error);
+  function fillConnections({ types, connections }) {
+    connectionsEl.replaceChildren(...types.map((type) => window.Fields.connectionType(
+      type,
+      connections.filter((c) => c.type === type.type),
+      {
+        onAdd: (values) => window.library.addConnection(type.type, values).then((result) => {
+          if (result.ok) fillConnections(result.state);
+          return result;
+        }),
+        onRemove: (c) => window.library.removeConnection(c.id).then((state) => state && fillConnections(state)),
+      },
+    )));
   }
 
-  // Labels and hosts only: the links themselves never reach this window.
-  function fillCalendars(list) {
-    calendars.replaceChildren(...list.map((calendar) => {
-      const li = document.createElement('li');
-      li.className = 'conn';
-      const name = document.createElement('span');
-      name.className = 'conn-name';
-      name.textContent = calendar.label;
-      const host = document.createElement('small');
-      host.textContent = calendar.host;
-      name.append(host);
-      const remove = document.createElement('button');
-      remove.className = 'ghost';
-      remove.textContent = 'Remove';
-      remove.addEventListener('click', () => window.library.removeCalendar(calendar.id).then(fillCalendars));
-      li.append(name, remove);
-      return li;
-    }));
+  function loadConnections() {
+    return window.library.connections().then(fillConnections);
   }
 
-  // The link is fetched once before it is saved, which takes a moment.
-  function addCalendar() {
-    const url = calendarUrl.value.trim();
-    if (!url || calendarAdd.disabled) return;
-    calendarAdd.disabled = true;
-    hint('Checking the link…');
-    window.library.addCalendar(url).then((result) => {
-      calendarAdd.disabled = false;
-      fillCalendars(result.calendars);
-      if (result.ok) {
-        calendarUrl.value = '';
-        hint('Added. Agenda widgets refresh now.');
-      } else {
-        hint(result.error, true);
-      }
-    });
-  }
-
-  calendarAdd.addEventListener('click', addCalendar);
-  calendarUrl.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') addCalendar();
-  });
-  calendarUrl.addEventListener('input', () => hint(CALENDAR_HINT));
-
-  window.library.onShowConnections(() => {
+  // A widget's "Connect a calendar…" lands here, on that type's section.
+  window.library.onShowConnections((type) => {
     showSettings(true);
-    document.getElementById('calendars-setting').scrollIntoView({ block: 'start' });
-    calendarUrl.focus();
+    loadConnections().then(() => {
+      const section = connectionsEl.querySelector(`[data-type="${CSS.escape(type || '')}"]`)
+        || document.getElementById('connections-head');
+      section.scrollIntoView({ block: 'start' });
+      const input = section.querySelector('input');
+      if (input) input.focus();
+    });
   });
 
   function showSettings(show) {
@@ -336,7 +310,7 @@
     document.getElementById('title').textContent = open ? 'Settings' : 'Sticky Notes';
     if (open) {
       window.library.getSettings().then(fillSettings);
-      window.library.calendars().then(fillCalendars);
+      loadConnections();
     }
   }
 

@@ -50,9 +50,57 @@ body {
 /* Without an explicit drag region a frameless window cannot be moved. */
 .grip {
   flex: 1;
+  display: flex;
+  align-items: center;
+  min-width: 0;
   height: 100%;
   -webkit-app-region: drag;
 }
+
+/* The title. It has to leave the drag region to receive a double-click, so
+   it is only as wide as its text — the rest of the bar still drags. */
+.title {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin-left: 6px;
+  padding: 1px 5px;
+  overflow: hidden;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0.9;
+  cursor: text;
+  -webkit-app-region: no-drag;
+  transition: background-color 110ms linear, opacity 110ms linear;
+}
+
+.title:hover { opacity: 1; background: rgba(255, 255, 255, 0.14); }
+
+/* No title yet: a faint prompt, so renaming can be found without a manual. */
+.title.empty { font-weight: 400; font-style: italic; opacity: 0.42; }
+.title.empty:hover { opacity: 0.85; }
+
+.title-input {
+  flex: 0 1 220px;
+  min-width: 60px;
+  margin-left: 6px;
+  padding: 1px 5px;
+  border: 0;
+  border-radius: 4px;
+  outline: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(0, 0, 0, 0.2);
+  color: #fff;
+  font-family: var(--font);
+  font-size: 12px;
+  font-weight: 600;
+  -webkit-app-region: no-drag;
+}
+
+.title-input::placeholder { color: rgba(255, 255, 255, 0.55); font-weight: 400; }
 
 .actions {
   display: flex;

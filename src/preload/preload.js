@@ -7,6 +7,8 @@ contextBridge.exposeInMainWorld('notes', {
   update: (patch) => ipcRenderer.invoke('note:update', patch),
   setPinned: (pinned) => ipcRenderer.invoke('note:setPinned', pinned),
   create: () => ipcRenderer.invoke('note:new'),
+  addMenu: () => ipcRenderer.invoke('note:addMenu'),
+  onTitleEdit: (cb) => ipcRenderer.on('title:edit', () => cb()),
   hide: () => ipcRenderer.invoke('note:hide'),
   menu: () => ipcRenderer.invoke('note:menu'),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),

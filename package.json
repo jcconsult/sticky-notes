@@ -15,7 +15,7 @@
     "dev": "electron . --dev",
     "dev:reset": "node tools/dev-reset.js",
     "check": "node tools/check.js",
-    "test": "node test/format.test.js && node test/hide.test.js && node test/widgets.test.js",
+    "test": "node test/format.test.js && node test/hide.test.js && node test/widgets.test.js && node test/extensions.test.js",
     "vendor": "node tools/vendor.js",
     "icon": "node tools/make-icon.js",
     "postinstall": "node tools/vendor.js",

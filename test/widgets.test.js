@@ -8,7 +8,7 @@
 const path = require('path');
 
 const { render } = require(path.join(__dirname, '..', 'src', 'main', 'widgets', 'format.js'));
-const { view } = require(path.join(__dirname, '..', 'src', 'main', 'widgets', 'agenda-view.js'));
+const { view } = require(path.join(__dirname, '..', 'src', 'main', 'extensions', 'calendar', 'agenda-view.js'));
 
 let pass = 0;
 let fail = 0;
@@ -108,7 +108,7 @@ check('overnight: continues tomorrow', v.sections[1].items[0].lead, 'cont.');
 
 // --- ics parsing -----------------------------------------------------------
 
-const { parse } = require(path.join(__dirname, '..', 'src', 'main', 'widgets', 'ics.js'));
+const { parse, calendarName } = require(path.join(__dirname, '..', 'src', 'main', 'extensions', 'calendar', 'ics.js'));
 
 // Made-up feed. Covers what real Google and Outlook feeds throw at a parser:
 // a Windows time zone name with its VTIMEZONE (Outlook), a weekly series with
@@ -161,6 +161,8 @@ check('multi-day event spans its days', [titled('Offsite')[0].start, titled('Off
 check('cancelled events are dropped', titled('Cancelled thing').length, 0);
 check('a lookalike link is not a Join button', titled('Lookalike')[0].joinUrl, null);
 check('the window is respected', parse(ICS, Date.UTC(2026, 9, 1), Date.UTC(2026, 9, 2)).length, 0);
+check('a feed without a name has none', calendarName(ICS), null);
+check('the calendar names itself', calendarName(ICS.replace('VERSION:2.0', 'VERSION:2.0\r\nX-WR-CALNAME:Work')), 'Work');
 
 console.log(`\n${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

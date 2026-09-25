@@ -6,13 +6,14 @@
         content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none';" />
   <title>Widget</title>
   <link rel="stylesheet" href="note.css" />
+  <link rel="stylesheet" href="fields.css" />
   <link rel="stylesheet" href="widget.css" />
 </head>
 <body class="widget">
   <header id="bar" class="bar">
-    <div class="grip"><span id="label" class="label"></span></div>
+    <div class="grip"><span id="title" class="title"></span></div>
     <div class="actions">
-      <button id="btn-new" class="btn" title="New note (Ctrl+N)" aria-label="New note">
+      <button id="btn-new" class="btn" title="New note or widget" aria-label="New note or widget">
         <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3.5v9M3.5 8h9"/></svg>
       </button>
       <button id="btn-color" class="btn" title="Colour" aria-label="Colour" aria-expanded="false">
@@ -45,6 +46,8 @@
 
   <script src="../vendor/markdown-it.min.js"></script>
   <script src="markdown.js"></script>
+  <script src="fields.js"></script>
+  <script src="titlebar.js"></script>
   <script src="widget.js"></script>
 </body>
 </html>

@@ -6,6 +6,7 @@
         content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none';" />
   <title>Sticky Notes</title>
   <link rel="stylesheet" href="library.css" />
+  <link rel="stylesheet" href="fields.css" />
 </head>
 <body>
   <header class="bar">
@@ -84,20 +85,10 @@
       </p>
     </div>
 
-    <div class="setting" id="calendars-setting">
-      <div class="setting-head"><label for="calendar-url">Calendars</label></div>
-      <ul id="calendars" class="conns"></ul>
-      <div class="conn-add">
-        <input type="url" id="calendar-url" class="text-input" spellcheck="false"
-               placeholder="Paste a calendar link (https:// or webcal://)" />
-        <button id="calendar-add" class="ghost">Add</button>
-      </div>
-      <p class="hint" id="calendar-hint">
-        For the Agenda widget. Google: Settings → your calendar → Integrate calendar →
-        Secret address in iCal format. Outlook: Settings → Calendar → Shared calendars →
-        Publish a calendar, with “Can view all details”. Links are stored encrypted on this PC.
-      </p>
-    </div>
+    <!-- Drawn from what extensions contribute: one section per connection
+         type (calendars today; Linear and others later). -->
+    <h3 class="connections-head" id="connections-head">Connections</h3>
+    <div id="connections"></div>
 
     <div class="setting">
       <div class="setting-head"><label>Inside a note</label></div>
@@ -126,6 +117,7 @@
     <span id="count" class="count"></span>
   </footer>
 
+  <script src="fields.js"></script>
   <script src="library.js"></script>
 </body>
 </html>

@@ -1,0 +1,114 @@
+/* Forms drawn by fields.js, shared by a widget's settings and Settings →
+   Connections. Only theme tokens; --dot falls back where a window has none. */
+
+/* ----------------------------------------------------- widget settings */
+
+.field { padding: 10px 0; border-bottom: 1px solid var(--line); }
+.field:last-child { border-bottom: 0; }
+
+.field-label { display: block; margin-bottom: 7px; font-weight: 600; }
+
+.choices { display: flex; flex-wrap: wrap; gap: 4px; }
+
+.choices button {
+  padding: 4px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--fg);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: default;
+  transition: background-color 110ms linear;
+}
+
+.choices button:hover { background: var(--chip); }
+.choices button[aria-checked="true"] { border-color: var(--dot, var(--fg)); background: var(--chip); }
+.choices button:focus-visible { outline: 1px solid var(--fg); outline-offset: 1px; }
+
+.field.toggle { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.field.toggle .field-label { margin: 0; }
+
+.field input[type="checkbox"] {
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--dot, var(--fg));
+}
+
+.checklist { margin: 0 0 4px; padding: 0; list-style: none; }
+
+.checklist label {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  column-gap: 8px;
+  align-items: center;
+  padding: 3px 0;
+}
+
+.checklist .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.checklist small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.checklist small:empty { display: none; }
+.checklist .broken small { color: #e0455f; }
+
+button.link {
+  padding: 2px 0;
+  border: 0;
+  background: none;
+  color: var(--dot, var(--fg));
+  font: inherit;
+  font-size: 12.5px;
+  cursor: default;
+}
+
+button.link:hover { text-decoration: underline; }
+button.link:focus-visible { outline: 1px solid var(--fg); outline-offset: 2px; }
+
+/* ---------------------------------------------------------- connections */
+
+.conns { margin: 0; padding: 0; list-style: none; }
+
+.conn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 0;
+}
+
+.conn-name { flex: 1; min-width: 0; font-weight: 600; }
+
+.conn-name small {
+  display: block;
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conn.broken .conn-name small { color: #e0455f; }
+
+.conn-add { display: flex; gap: 6px; margin-top: 6px; }
+
+.text-input {
+  flex: 1;
+  min-width: 0;
+  padding: 5px 8px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--chip);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+}
+
+.text-input:focus-visible { outline: 1px solid var(--fg); outline-offset: 1px; }
+
+.hint.error { color: #e0455f; }

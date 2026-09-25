@@ -116,4 +116,15 @@ function parse(text, from, to) {
   return events;
 }
 
-module.exports = { parse };
+// The calendar's own name, which Google and Outlook both put in the feed.
+function calendarName(text) {
+  try {
+    const root = new ICAL.Component(ICAL.parse(text));
+    const name = root.getFirstPropertyValue('x-wr-calname');
+    return typeof name === 'string' && name.trim() ? name.trim().slice(0, 60) : null;
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { parse, calendarName };
